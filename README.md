@@ -1,52 +1,110 @@
-import Mathlib.Data.Real.Basic
-import Aesop
+# Formalizing Game Theory in Lean
 
--- a Utility is a Real number representing the payoff of a given set of strategies
+Formalizing Game Theory in the Lean proof language holds significant promise for advancing both the theoretical foundations and practical applications of game-theoretic models. Lean, known for its precision and rigor in formal verification, offers a robust framework for expressing and proving mathematical theorems. By formalizing Game Theory in Lean, researchers and practitioners can establish a rigorous basis for analyzing strategic interactions, ensuring the correctness of game-theoretic concepts, and facilitating automated verification of complex game structures. 
+
+This repository contains an example of formal structures and properties to represent and reason about games in Lean. While there have been other attempts to make such a formalization, the representation proposed here is novel in that it can represent a much broader class of games than previous attempts. In particular, this formalization is able to represent games with more than 2 players, games with a continuous set of actions, and games with intricate utility functions.
+
+## Formalization
+
+Our formalization starts with a definition of Utility as:
+
+```lean
 structure Utility := (val : Real)
+```
 
-instance : Add Utility := ⟨λ u v => ⟨u.val + v.val⟩⟩
-instance : LE Utility := ⟨λ u v => u.val ≤ v.val⟩
-instance : LT Utility := ⟨λ u v => u.val < v.val⟩
-instance : OfNat Utility n := ⟨⟨n⟩⟩
+which defines Utility as a real number. While many different types could be used to represent preference order, we chose to restrict the formalization to real numbers because they are a common choice in the literature and because they are easy to work with in Lean.
 
--- a PureStrategy is an instance of the strategy type
+We then represent a Pure Strategy as:
+
+```lean
 structure PureStrategy (A : Type) := (val : A)
+```
 
--- a MixedStrategy is a probability distribution over PureStrategies
+which defines a Pure Strategy as an instance of some type `A`. This means that a player's available strategies are defined with a type `A`, and an individual strategy is defined as an instance of that type. For example, in the game of Stag Hunt, the avalable strategies could be formalized as the type:
+
+```lean
+inductive StagHuntStrategies
+| stag
+| hare
+```
+
+and a strategy for player 1 could be formalized as the instance `PureStrategy StagHuntStrategies.stag`. This representation allows for a wide variety of games to be formalized, including games with a continuous set of actions. For example, the Nash Demand Game could be formalized with the type:
+
+```lean
+structure NashDemandStrategies :=
+    (demand : Real)
+    (above_0: demand > 0)
+    (below_1: demand < 1)
+```
+
+and a strategy for player 1 could be formalized as the instance `PureStrategy (NashDemandStrategies 0.5 ... ...)`.
+
+We then represent a Mixed Strategy as:
+
+```lean
 structure MixedStrategy (A : Type) :=
   (strategies: List A)
   (probabilities: List Real)
   (probabilities_sum_to_one: List.foldl (a + b) 0 probabilities = 1)
   (same_length: List.length strategies = List.length probabilities)
+```
 
--- a Strategy is either a PureStrategy or a MixedStrategy
+which defines a Mixed Strategy as a list of Pure Strategies and a list of probabilities. 
+
+Then, a Strategy is defined as either a Pure Strategy or a Mixed Strategy:
+
+```lean
 inductive Strategy (A : Type) where
 | pure : PureStrategy A → Strategy A
 | mixed : MixedStrategy A → Strategy A
+```
 
--- a StrategyProfile is a list of strategies (for type reasons, we need to use a function)
+A Strategy Profile, which is a list of strategies, is then defined as:
+
+```lean
 structure StrategyProfile (L: List Type) where
   (strategies: (i: Fin (List.length L)) → Strategy (List.get L i))
+```
 
--- a UtilityProfile is a list of utilities
+The reason that this must be a function from a natural number to a strategy is that the strategies for each player must be of different types. For example, in the Ultimatum Game, the first player's strategy is a real number between 0 and 1, while the second player's strategy is a essentially a reject or accept answer.
+
+A Utility Profile, which is a list of utilities, is then defined as:
+
+```lean
 structure UtilityProfile (L: List Type) where
   (utilities: List Utility)
   (same_length: List.length L = List.length utilities)
+```
 
--- a UtilityFunction is a function that takes a StrategyProfile and returns a Utility
+And the Utility Function is defined as:
+
+```lean
 structure UtilityFunction (L: List Type) where
   (val: StrategyProfile L → UtilityProfile L)
+```
 
--- a Game is a number of players, a list of strategies for each player, and a utility function
+which essentially maps a Strategy Profile to a Utility Profile.
+
+Finally, a Game is defined as:
+
+```lean
 structure Game (L: List Type) (N: Nat) where
   (utility: UtilityFunction L)
   (same_length: (List.length L) = N)
   (at_least_one_player: N > 0)
+```
 
--- a PlayGame is a function that takes a Game, a StrategyProfile, and returns a list of Utilities
+and an instance of a Game is defined as:
+
+```lean
 def PlayGame (L: List Type) (N: Nat) (G: Game L N) (S: StrategyProfile L) : UtilityProfile L := G.utility.val S
+```
 
--- NashEquilibrium is a StrategyProfile where no player can increase their utility by unilaterally changing their strategy
+which applies the utility function of the game to a given strategy profile to get a utility profile.
+
+We also define a property of a Strategy Profile being a Nash Equilibrium as:
+
+```lean
 def NashEquilibrium (L: List Type) (N: Nat) (G: Game L N) (S: StrategyProfile L) : Prop :=
   ∀ (i: Fin (List.length L))
     (s': Strategy (List.get L i)),
@@ -57,23 +115,23 @@ def NashEquilibrium (L: List Type) (N: Nat) (G: Game L N) (S: StrategyProfile L)
     let UNew : UtilityProfile L := PlayGame L N G newStrategyProfile
     let UOld : UtilityProfile L := PlayGame L N G S
     (List.get UNew.utilities (Fin.cast UNew.same_length i)) ≤ (List.get UOld.utilities (Fin.cast UOld.same_length i))
+```
 
--- Example: Prisoner's Dilemma
--- Two prisoners are arrested for a crime. They are held in separate cells and cannot communicate with each other.
--- The prosecutor lacks sufficient evidence to convict the pair on the principal charge, but he has enough to convict both on a lesser charge.
--- Simultaneously, the prosecutor offers each prisoner a bargain. Each prisoner is given the opportunity either to betray the other by
--- testifying that the other committed the crime, or to cooperate with the other by remaining silent.
+which essentially states that, for each player, and for each strategy that the player could switch to, the utility of that player in the new strategy is less than or equal to their utility in the original strategy profile.
 
--- The offer is as follows, where the numbers in parentheses represent the utility, the inverse of the sentence in years:
--- +----------+---------+----------+---------+
--- |          |         | Player 2 |         |
--- +----------+---------+----------+---------+
--- |          |         | Silent   | Confess |
--- | Player 1 | Silent  | 4, 4     | 1, 6    |
--- |          | Confess | 6, 1     | 2, 2    |
--- +----------+---------+----------+---------+
+## Example: Prisoner's Dilemma
 
-inductive PrisonersDilemmaStrategies where
+The Prisoner's Dilemma is a classic game in Game Theory. It is a two-player game where each player can either cooperate or defect. An example payoff matrix which fits the definition of Prisoner's Dilemma is:
+
+| Player 1 / Player 2 | Cooperate | Defect |
+| ------------------- | --------- | ------ |
+| Cooperate           | 4, 4      | 1, 6   |
+| Defect              | 6, 1      | 2, 2   |
+
+We created an example formalization of the Prisoner's Dilemma in Lean as follows:
+
+```lean
+inductive PrisonersDilemmaStrategies
 | silent
 | confess
 
@@ -100,45 +158,23 @@ def PrisonersDilemmaGame : Game PL 2 :=
     same_length := rfl,
     at_least_one_player := Nat.zero_lt_succ 1
   }
+```
 
-def PrisonersDilemmaSilentProfile : StrategyProfile PL :=
-  { strategies := λ i => match i with
-                          | ⟨0, _⟩ => Strategy.pure ⟨PrisonersDilemmaStrategies.silent⟩
-                          | ⟨1, _⟩ => Strategy.pure ⟨PrisonersDilemmaStrategies.silent⟩
-  }
+This formalization defines the type `PrisonersDilemmaStrategies` to be the type of strategies for the Prisoner's Dilemma, and defines the list `PL` to be the Strategy to Player mapping. It then defines the utility function for the Prisoner's Dilemma by matching on the strategies of the two players and returning the appropriate utility profile. Finally, it defines the Prisoner's Dilemma game as a game with the Prisoner's Dilemma utility function, 2 players, and a proof that there is at least one player.
 
-theorem NotNashEquilibriumSilent : ¬ NashEquilibrium PL 2 PrisonersDilemmaGame PrisonersDilemmaSilentProfile
-  := by intro h
-        unfold NashEquilibrium at h
-        unfold PrisonersDilemmaSilentProfile at h
-        unfold PlayGame at h
-        unfold UtilityFunction.val at h
-        unfold PrisonersDilemmaGame at h
-        unfold PrisonersDilemmaUtilityFunction at h
-        simp_all
-        let x : Fin (List.length PL) := ⟨0, by exact Nat.succ_pos (List.length [PrisonersDilemmaStrategies])⟩
-        have PLxPDS : PureStrategy (List.get PL x) = PureStrategy PrisonersDilemmaStrategies := by simp_all
-                                                                                                   conv => lhs
-                                                                                                           arg 1
-                                                                                                           change PrisonersDilemmaStrategies
-        let s'' : Strategy (List.get PL x) := Strategy.pure ⟨PrisonersDilemmaStrategies.confess⟩
-        let h' : _ := h x s''
-        repeat simp at h'
-        conv at h' => rhs
-                      rhs
-                      change Fin.ofNat 0
-                      change 0
-        simp at h'
-        unfold StrategyProfile.strategies at h'
-        conv at h' => lhs
-                      rhs
-                      change Fin.ofNat 0
-                      change 0
-        sorry
+## Example: Rock, Paper, Scissors
 
+Rock, Paper, Scissors is another classic game. It's a two-player game with 3 strategies for each player. An example payoff matrix which fits the definition of Rock, Paper, Scissors is:
 
--- Example: Rock-Paper-Scissors
+| Player 1 / Player 2 | Rock | Paper | Scissors |
+| ------------------- | ---- | ----- | -------- |
+| Rock                | 1, 1 | 0, 2  | 2, 0     |
+| Paper               | 2, 0 | 1, 1  | 0, 2     |
+| Scissors            | 0, 2 | 2, 0  | 1, 1     |
 
+We created an example formalization of Rock, Paper, Scissors in Lean as follows:
+
+```lean
 inductive RockPaperScissorsStrategies where
 | rock
 | paper
@@ -172,14 +208,17 @@ def RockPaperScissorsGame : Game RPS 2 :=
     same_length := rfl,
     at_least_one_player := Nat.zero_lt_succ 1
   }
+```
 
+This formalization defines the type `RockPaperScissorsStrategies` to be the type of strategies for Rock, Paper, Scissors, and defines the list `RPS` to be the Strategy to Player mapping. It then defines the utility function for Rock, Paper, Scissors by matching on the strategies of the two players and returning the appropriate utility profile. Finally, it defines the Rock, Paper, Scissors game as a game with the Rock, Paper, Scissors utility function, 2 players, and a proof that there is at least one player.
 
+## Example: Nash Demand Game
 
--- Example: Nash Demand Game
+Our last example is the Nash Demand Game. It's a two-player game where each player can demand a real number between 0 and 1. If the sum of the demands is greater than 1, then both players get 0. Otherwise, the first player gets their demand and the second player gets theirs.
 
--- Two players are asked to demand a share of some good. If the sum of the demands is less than or equal to the total amount available,
--- then both players get their demand. Otherwise, neither player gets anything.
+We created an example formalization of the Nash Demand Game in Lean as follows:
 
+```lean
 structure NashDemandChoice where
   (demand: Real)
   (demand_nonnegative: demand ≥ 0)
@@ -208,3 +247,10 @@ noncomputable def NashDemandGame : Game NashDemandChoiceList 2 :=
     same_length := rfl,
     at_least_one_player := Nat.zero_lt_succ 1
   }
+```
+
+This formalization defines the type `NashDemandChoice` to be the type of strategies for the Nash Demand Game, and defines the list `NashDemandChoiceList` to be the Strategy to Player mapping. It then defines the utility function for the Nash Demand Game by matching on the strategies of the two players and returning the appropriate utility profile. Finally, it defines the Nash Demand Game as a game with the Nash Demand utility function, 2 players, and a proof that there is at least one player.
+
+## Conclusion
+
+This repository contains an example of formal structures and properties to represent and reason about games in Lean. While there have been other attempts to make such a formalization, the representation proposed here is novel in that it can represent a much broader class of games than previous attempts. In particular, this formalization is able to represent games with more than 2 players, games with a continuous set of actions, and games with intricate utility functions.
