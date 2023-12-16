@@ -4,6 +4,8 @@ Formalizing Game Theory in the Lean proof language holds significant promise for
 
 This repository contains an example of formal structures and properties to represent and reason about games in Lean. While there have been other attempts to make such a formalization, the representation proposed here is novel in that it can represent a much broader class of games than previous attempts. In particular, this formalization is able to represent games with more than 2 players, games with a continuous set of actions, and games with intricate utility functions.
 
+The relevant code for this repository can be found [here](https://github.com/MixedMatched/formalizing-game-theory/blob/master/FormalizingGameTheory/Basic.lean).
+
 ## Formalization
 
 Our formalization starts with a definition of Utility as:
