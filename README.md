@@ -249,7 +249,7 @@ noncomputable def NashDemandGame : Game NashDemandChoiceList 2 :=
   }
 ```
 
-This formalization defines the type `NashDemandChoice` to be the type of strategies for the Nash Demand Game, and defines the list `NashDemandChoiceList` to be the Strategy to Player mapping. It then defines the utility function for the Nash Demand Game by matching on the strategies of the two players and returning the appropriate utility profile. Finally, it defines the Nash Demand Game as a game with the Nash Demand utility function, 2 players, and a proof that there is at least one player.
+This formalization defines the type `NashDemandChoice` to be the type of strategies for the Nash Demand Game, and defines the list `NashDemandChoiceList` to be the Strategy to Player mapping. It then defines the utility function for the Nash Demand Game by matching on the strategies of the two players and returning the appropriate utility profile. Because of some properties of Real numbers defined using Cauchy sequences, the definitions must be marked `noncomputable`, meaning they can be used in proofs, but not directly calculated. Finally, it defines the Nash Demand Game as a game with the Nash Demand utility function, 2 players, and a proof that there is at least one player.
 
 ## Conclusion
 
