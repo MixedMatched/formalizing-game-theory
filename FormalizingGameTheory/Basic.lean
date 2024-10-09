@@ -76,17 +76,19 @@ def NashEquilibrium (L: List Type) (N: Nat) (G: Game L N) (S: StrategyProfile L)
     UnilateralChange L S S' delta → DoesAtLeastAsWellAs L N G S S' delta
 
 theorem not_nasheq_if_uc_better : ∀ (L: List Type) (N: Nat) (G: Game L N) (A B: StrategyProfile L) (i: Fin (List.length L)),
-  let AUtilities: UtilityProfile L := (PlayGame L N G A)
-  let BUtilities: UtilityProfile L := (PlayGame L N G B)
-  UnilateralChange L A B i ∧ AUtilities.utilities.get (Fin.cast AUtilities.same_length i) > BUtilities.utilities.get (Fin.cast BUtilities.same_length i) → ¬NashEquilibrium L N G B
-  := by intro l n g a b i au bu h ne
+  UnilateralChange L A B i ∧ ¬DoesAtLeastAsWellAs L N G B A i → ¬NashEquilibrium L N G B
+  := by intro l n g a b i h ne
         unfold NashEquilibrium at ne
         have uc: UnilateralChange l b a i := by apply And.left at h
                                                 apply UnilateralChangeComm at h
                                                 exact h
         apply ne at uc
-        have greater: (PlayGame l n g a).utilities.get (Fin.cast au.same_length i) > (PlayGame l n g b).utilities.get (Fin.cast bu.same_length i) := by apply And.right at h
-                                                                                                                                                        exact h
+        let au: UtilityProfile l := (PlayGame l n g a)
+        let bu: UtilityProfile l := (PlayGame l n g b)
+        have greater: au.utilities.get (Fin.cast au.same_length i) > bu.utilities.get (Fin.cast bu.same_length i)
+          := by apply And.right at h
+                unfold DoesAtLeastAsWellAs at h
+                simp_all
         apply not_le_of_gt at greater
         tauto
 
@@ -195,7 +197,7 @@ theorem NotNashEquilibriumSilentSilent : ¬ NashEquilibrium PL 2 PrisonersDilemm
         simp
         constructor
         case left => exact PDSilentConfessIsUnilateralOfPDSilentSilent
-        case right => unfold PlayGame PrisonersDilemmaGame PrisonersDilemmaSilentConfessProfile PrisonersDilemmaSilentSilentProfile PrisonersDilemmaUtilityFunction
+        case right => unfold DoesAtLeastAsWellAs PlayGame PrisonersDilemmaGame PrisonersDilemmaSilentConfessProfile PrisonersDilemmaSilentSilentProfile PrisonersDilemmaUtilityFunction
                       simp_all
                       conv => rhs
                               equals 3 + 1 => exact Eq.symm three_add_one_eq_four
