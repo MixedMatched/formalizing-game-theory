@@ -54,15 +54,28 @@ theorem UnilateralChangeComm (L: List Type) (S: StrategyProfile L) (delta: Fin (
                   rw [eq_comm]
           exact og
 
+-- S does at least as well as S' does at delta
+def DoesAtLeastAsWellAs (L: List Type) (N: Nat) (G: Game L N) (S S': StrategyProfile L) (delta: Fin (List.length L)) : Prop :=
+  let thisUtilities: UtilityProfile L := (PlayGame L N G S)
+  let otherUtilities: UtilityProfile L := (PlayGame L N G S')
+  otherUtilities.utilities.get (Fin.cast otherUtilities.same_length delta) ≤ thisUtilities.utilities.get (Fin.cast thisUtilities.same_length delta)
+
+theorem dalawa_inv (L: List Type) (N: Nat) (G: Game L N) (S: StrategyProfile L) (delta: Fin (List.length L)):
+  ∀ (S': StrategyProfile L),
+    ¬DoesAtLeastAsWellAs L N G S S' delta → DoesAtLeastAsWellAs L N G S' S delta
+    := by intro S' not_dalawa
+          unfold DoesAtLeastAsWellAs at not_dalawa ⊢
+          simp_all
+          exact le_of_lt not_dalawa
+
 -- NashEquilibrium is a StrategyProfile where no player can increase their utility by unilaterally changing their strategy
 def NashEquilibrium (L: List Type) (N: Nat) (G: Game L N) (S: StrategyProfile L) : Prop :=
+  -- for every StrategyProfile and delta, if it's a UnilateralChange, S must outperform S' for delta
   ∀ (S': StrategyProfile L)
     (delta: Fin (List.length L)),
-    let thisUtilities: UtilityProfile L := (PlayGame L N G S)
-    let otherUtilities: UtilityProfile L := (PlayGame L N G S')
-    UnilateralChange L S S' delta → otherUtilities.utilities.get (Fin.cast otherUtilities.same_length delta) ≤ thisUtilities.utilities.get (Fin.cast thisUtilities.same_length delta)
+    UnilateralChange L S S' delta → DoesAtLeastAsWellAs L N G S S' delta
 
-theorem notNashEqIfBetterStrat : ∀ (L: List Type) (N: Nat) (G: Game L N) (A B: StrategyProfile L) (i: Fin (List.length L)),
+theorem not_nasheq_if_uc_better : ∀ (L: List Type) (N: Nat) (G: Game L N) (A B: StrategyProfile L) (i: Fin (List.length L)),
   let AUtilities: UtilityProfile L := (PlayGame L N G A)
   let BUtilities: UtilityProfile L := (PlayGame L N G B)
   UnilateralChange L A B i ∧ AUtilities.utilities.get (Fin.cast AUtilities.same_length i) > BUtilities.utilities.get (Fin.cast BUtilities.same_length i) → ¬NashEquilibrium L N G B
@@ -76,6 +89,23 @@ theorem notNashEqIfBetterStrat : ∀ (L: List Type) (N: Nat) (G: Game L N) (A B:
                                                                                                                                                         exact h
         apply not_le_of_gt at greater
         tauto
+
+theorem exists_better_uc_if_not_nasheq (L: List Type) (N: Nat) (G: Game L N) (S: StrategyProfile L):
+  ¬NashEquilibrium L N G S → (∃ (S': StrategyProfile L) (delta: Fin (List.length L)), UnilateralChange L S S' delta ∧ DoesAtLeastAsWellAs L N G S' S delta)
+  := by intro not_ne
+        unfold NashEquilibrium at not_ne
+        simp_all
+        obtain ⟨S', h⟩ := not_ne
+        obtain ⟨delta, h⟩ := h
+        obtain ⟨left, right⟩ := h
+        apply dalawa_inv at right
+        use S'
+        use delta
+
+theorem all_ucs_not_nash_eq_then_nash_eq (L: List Type) (N: Nat) (G: Game L N) (S: StrategyProfile L) :
+  (∀ (S': StrategyProfile L) (delta: Fin (List.length L)),
+    UnilateralChange L S S' delta → ¬NashEquilibrium L N G S') → NashEquilibrium L N G S
+    := by sorry
 
 -- Example: Prisoner's Dilemma
 -- Two prisoners are arrested for a crime. They are held in separate cells and cannot communicate with each other.
@@ -132,6 +162,12 @@ def PrisonersDilemmaSilentConfessProfile : StrategyProfile PL :=
                           | ⟨1, _⟩ => Strategy.pure ⟨PrisonersDilemmaStrategies.confess⟩
   }
 
+def PrisonersDilemmaConfessConfessProfile : StrategyProfile PL :=
+  { strategies := λ i => match i with
+                          | ⟨0, _⟩ => Strategy.pure ⟨PrisonersDilemmaStrategies.confess⟩
+                          | ⟨1, _⟩ => Strategy.pure ⟨PrisonersDilemmaStrategies.confess⟩
+  }
+
 theorem PDSilentConfessIsUnilateralOfPDSilentSilent : UnilateralChange PL PrisonersDilemmaSilentConfessProfile PrisonersDilemmaSilentSilentProfile (Fin.mk 1 x)
   := by unfold UnilateralChange
         intro i
@@ -152,8 +188,8 @@ theorem PDSilentConfessIsUnilateralOfPDSilentSilent : UnilateralChange PL Prison
                                            rw [add_comm]
                            simp_all only [add_zero, add_lt_iff_neg_left, not_lt_zero']
 
-theorem NotNashEquilibriumSilent : ¬ NashEquilibrium PL 2 PrisonersDilemmaGame PrisonersDilemmaSilentSilentProfile
-  := by apply notNashEqIfBetterStrat PL 2 PrisonersDilemmaGame PrisonersDilemmaSilentConfessProfile PrisonersDilemmaSilentSilentProfile (Fin.mk 1 _)
+theorem NotNashEquilibriumSilentSilent : ¬ NashEquilibrium PL 2 PrisonersDilemmaGame PrisonersDilemmaSilentSilentProfile
+  := by apply not_nasheq_if_uc_better PL 2 PrisonersDilemmaGame PrisonersDilemmaSilentConfessProfile PrisonersDilemmaSilentSilentProfile (Fin.mk 1 _)
         pick_goal 2
         rw [PL_length]
         simp
@@ -164,6 +200,39 @@ theorem NotNashEquilibriumSilent : ¬ NashEquilibrium PL 2 PrisonersDilemmaGame 
                       conv => rhs
                               equals 3 + 1 => exact Eq.symm three_add_one_eq_four
                       simp_all only [lt_add_iff_pos_right, zero_lt_one]
+
+theorem NashEquilibriumConfessConfess : NashEquilibrium PL 2 PrisonersDilemmaGame PrisonersDilemmaConfessConfessProfile
+  := by unfold NashEquilibrium UnilateralChange DoesAtLeastAsWellAs PlayGame PrisonersDilemmaGame PrisonersDilemmaUtilityFunction PrisonersDilemmaConfessConfessProfile
+        simp_all
+        intro s' delta h_delta
+        cases delta
+        case mk val isLt =>
+          cases val
+          case zero =>
+            cases s'
+            case mk strategies =>
+              have i : Fin PL.length := by exact ⟨1, by rw [PL_length]
+                                                        simp_all only [Fin.isValue, Fin.zero_eta, Nat.one_lt_ofNat]⟩
+              specialize h_delta i
+              simp_all
+              cases i
+              case mk val isLt =>
+                cases val
+                case zero =>
+                  cases h_delta
+                  case inr h' => sorry
+                  case inl h' => symm at h'
+                                 conv =>
+                                  lhs
+                                  arg 1
+                                  arg 1
+                                  pattern strategies (Fin.ofNat 0)
+                                  equals Strategy.pure { val := PrisonersDilemmaStrategies.confess } =>
+                                    simp_all only [Fin.zero_eta, Fin.isValue]
+                                    exact h'
+                                 sorry
+                case succ => sorry
+          case succ => sorry
 
 -- Example: Rock-Paper-Scissors
 
