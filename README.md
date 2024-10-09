@@ -68,7 +68,7 @@ A Utility Profile, which is a list of utilities, is then defined as:
 
 ```lean
 structure UtilityProfile (L: List Type) where
-  (utilities: List Utility)
+  (utilities: List Real)
   (same_length: List.length L = List.length utilities)
 ```
 
@@ -102,15 +102,9 @@ We also define a property of a Strategy Profile being a Nash Equilibrium as:
 
 ```lean
 def NashEquilibrium (L: List Type) (N: Nat) (G: Game L N) (S: StrategyProfile L) : Prop :=
-  ∀ (i: Fin (List.length L))
-    (s': Strategy (List.get L i)),
-    let newStrategies : (f: Fin (List.length L)) → Strategy (List.get L f) :=
-      λ j => if h : i = j then by { rw [h] at s'; exact s' }
-                          else S.strategies j
-    let newStrategyProfile : StrategyProfile L := { strategies := @newStrategies }
-    let UNew : UtilityProfile L := PlayGame L N G newStrategyProfile
-    let UOld : UtilityProfile L := PlayGame L N G S
-    (List.get UNew.utilities (Fin.cast UNew.same_length i)) ≤ (List.get UOld.utilities (Fin.cast UOld.same_length i))
+  ∀ (S': StrategyProfile L)
+    (delta: Fin (List.length L)),
+    UnilateralChange L S S' delta → DoesAtLeastAsWellAs L N G S S' delta
 ```
 
 which essentially states that, for each player, and for each strategy that the player could switch to, the utility of that player in the new strategy is less than or equal to their utility in the original strategy profile.

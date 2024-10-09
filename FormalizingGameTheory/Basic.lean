@@ -40,6 +40,7 @@ structure Game (L: List Type) (N: Nat) where
 -- a PlayGame is a function that takes a Game, a StrategyProfile, and returns a list of Utilities
 def PlayGame (L: List Type) (N: Nat) (G: Game L N) (S: StrategyProfile L) : UtilityProfile L := G.utility.val S
 
+-- two StrategyProfiles are UnilateralChange if at most one of their players strategies are different
 def UnilateralChange (L: List Type) (A B: StrategyProfile L) (delta: Fin (List.length L)) : Prop :=
   ∀ (i: Fin (List.length L)), A.strategies i = B.strategies i ∨ i = delta
 
@@ -65,10 +66,10 @@ theorem dalawa_inv (L: List Type) (N: Nat) (G: Game L N) (S: StrategyProfile L) 
     ¬DoesAtLeastAsWellAs L N G S S' delta → DoesAtLeastAsWellAs L N G S' S delta
     := by intro S' not_dalawa
           unfold DoesAtLeastAsWellAs at not_dalawa ⊢
-          simp_all
+          simp_all only [List.get_eq_getElem, Fin.coe_cast, not_le]
           exact le_of_lt not_dalawa
 
--- NashEquilibrium is a StrategyProfile where no player can increase their utility by unilaterally changing their strategy
+-- A StrategyProfile fulfills NashEquilibrium when no player can increase their utility by unilaterally changing their strategy
 def NashEquilibrium (L: List Type) (N: Nat) (G: Game L N) (S: StrategyProfile L) : Prop :=
   -- for every StrategyProfile and delta, if it's a UnilateralChange, S must outperform S' for delta
   ∀ (S': StrategyProfile L)
@@ -88,7 +89,7 @@ theorem not_nasheq_if_uc_better : ∀ (L: List Type) (N: Nat) (G: Game L N) (A B
         have greater: au.utilities.get (Fin.cast au.same_length i) > bu.utilities.get (Fin.cast bu.same_length i)
           := by apply And.right at h
                 unfold DoesAtLeastAsWellAs at h
-                simp_all
+                simp_all only [List.get_eq_getElem, Fin.coe_cast, not_le, gt_iff_lt]
         apply not_le_of_gt at greater
         tauto
 
