@@ -43,7 +43,7 @@ def PlayGame (L: List Type) (N: Nat) (G: Game L N) (S: StrategyProfile L) : Util
 def UnilateralChange (L: List Type) (A B: StrategyProfile L) (delta: Fin (List.length L)) : Prop :=
   ∀ (i: Fin (List.length L)), A.strategies i = B.strategies i ∨ i = delta
 
-theorem UnilateralChangeComm (L: List Type) (S: StrategyProfile L) (delta: Fin (List.length L)):
+theorem uc_comm (L: List Type) (S: StrategyProfile L) (delta: Fin (List.length L)):
   ∀ (S': StrategyProfile L)
     (_: UnilateralChange L S S' delta),
     UnilateralChange L S' S delta
@@ -80,7 +80,7 @@ theorem not_nasheq_if_uc_better : ∀ (L: List Type) (N: Nat) (G: Game L N) (A B
   := by intro l n g a b i h ne
         unfold NashEquilibrium at ne
         have uc: UnilateralChange l b a i := by apply And.left at h
-                                                apply UnilateralChangeComm at h
+                                                apply uc_comm at h
                                                 exact h
         apply ne at uc
         let au: UtilityProfile l := (PlayGame l n g a)
