@@ -2,12 +2,6 @@ import Mathlib.Data.Real.Basic
 import Aesop
 
 -- a Utility is a Real number representing the payoff of a given set of strategies
-structure Utility := (val : Real)
-
-instance : Add Utility := ⟨λ u v => ⟨u.val + v.val⟩⟩
-instance : LE Utility := ⟨λ u v => u.val ≤ v.val⟩
-instance : LT Utility := ⟨λ u v => u.val < v.val⟩
-instance : OfNat Utility n := ⟨⟨n⟩⟩
 
 -- a PureStrategy is an instance of the strategy type
 structure PureStrategy (A : Type) := (val : A)
@@ -30,7 +24,7 @@ structure StrategyProfile (L: List Type) where
 
 -- a UtilityProfile is a list of utilities
 structure UtilityProfile (L: List Type) where
-  (utilities: List Utility)
+  (utilities: List Real)
   (same_length: List.length L = List.length utilities)
 
 -- a UtilityFunction is a function that takes a StrategyProfile and returns a Utility
@@ -46,17 +40,42 @@ structure Game (L: List Type) (N: Nat) where
 -- a PlayGame is a function that takes a Game, a StrategyProfile, and returns a list of Utilities
 def PlayGame (L: List Type) (N: Nat) (G: Game L N) (S: StrategyProfile L) : UtilityProfile L := G.utility.val S
 
+def UnilateralChange (L: List Type) (A B: StrategyProfile L) (delta: Fin (List.length L)) : Prop :=
+  ∀ (i: Fin (List.length L)), A.strategies i = B.strategies i ∨ i = delta
+
+theorem UnilateralChangeComm (L: List Type) (S: StrategyProfile L) (delta: Fin (List.length L)):
+  ∀ (S': StrategyProfile L)
+    (_: UnilateralChange L S S' delta),
+    UnilateralChange L S' S delta
+    := by intro S' og
+          unfold UnilateralChange at og ⊢
+          conv => ext i
+                  pattern S'.strategies i = S.strategies i
+                  rw [eq_comm]
+          exact og
+
 -- NashEquilibrium is a StrategyProfile where no player can increase their utility by unilaterally changing their strategy
 def NashEquilibrium (L: List Type) (N: Nat) (G: Game L N) (S: StrategyProfile L) : Prop :=
-  ∀ (i: Fin (List.length L))
-    (s': Strategy (List.get L i)),
-    let newStrategies : (f: Fin (List.length L)) → Strategy (List.get L f) :=
-      λ j => if h : i = j then by { rw [h] at s'; exact s' }
-                          else S.strategies j
-    let newStrategyProfile : StrategyProfile L := { strategies := @newStrategies }
-    let UNew : UtilityProfile L := PlayGame L N G newStrategyProfile
-    let UOld : UtilityProfile L := PlayGame L N G S
-    (List.get UNew.utilities (Fin.cast UNew.same_length i)) ≤ (List.get UOld.utilities (Fin.cast UOld.same_length i))
+  ∀ (S': StrategyProfile L)
+    (delta: Fin (List.length L)),
+    let thisUtilities: UtilityProfile L := (PlayGame L N G S)
+    let otherUtilities: UtilityProfile L := (PlayGame L N G S')
+    UnilateralChange L S S' delta → otherUtilities.utilities.get (Fin.cast otherUtilities.same_length delta) ≤ thisUtilities.utilities.get (Fin.cast thisUtilities.same_length delta)
+
+theorem notNashEqIfBetterStrat : ∀ (L: List Type) (N: Nat) (G: Game L N) (A B: StrategyProfile L) (i: Fin (List.length L)),
+  let AUtilities: UtilityProfile L := (PlayGame L N G A)
+  let BUtilities: UtilityProfile L := (PlayGame L N G B)
+  UnilateralChange L A B i ∧ AUtilities.utilities.get (Fin.cast AUtilities.same_length i) > BUtilities.utilities.get (Fin.cast BUtilities.same_length i) → ¬NashEquilibrium L N G B
+  := by intro l n g a b i au bu h ne
+        unfold NashEquilibrium at ne
+        have uc: UnilateralChange l b a i := by apply And.left at h
+                                                apply UnilateralChangeComm at h
+                                                exact h
+        apply ne at uc
+        have greater: (PlayGame l n g a).utilities.get (Fin.cast au.same_length i) > (PlayGame l n g b).utilities.get (Fin.cast bu.same_length i) := by apply And.right at h
+                                                                                                                                                        exact h
+        apply not_le_of_gt at greater
+        tauto
 
 -- Example: Prisoner's Dilemma
 -- Two prisoners are arrested for a crime. They are held in separate cells and cannot communicate with each other.
@@ -69,8 +88,8 @@ def NashEquilibrium (L: List Type) (N: Nat) (G: Game L N) (S: StrategyProfile L)
 -- |          |         | Player 2 |         |
 -- +----------+---------+----------+---------+
 -- |          |         | Silent   | Confess |
--- | Player 1 | Silent  | 4, 4     | 1, 6    |
--- |          | Confess | 6, 1     | 2, 2    |
+-- | Player 1 | Silent  | 3, 3     | 1, 4    |
+-- |          | Confess | 4, 1     | 2, 2    |
 -- +----------+---------+----------+---------+
 
 inductive PrisonersDilemmaStrategies where
@@ -88,9 +107,9 @@ def PrisonersDilemmaUtilityFunction : UtilityFunction PL :=
                     let s1' : PureStrategy PrisonersDilemmaStrategies := by { rw [←h1]; exact s1 }
                     let s2' : PureStrategy PrisonersDilemmaStrategies := by { rw [←h2]; exact s2 }
                     match s1'.val, s2'.val with
-                    | PrisonersDilemmaStrategies.silent,  PrisonersDilemmaStrategies.silent  => { utilities := [4, 4], same_length := rfl }
-                    | PrisonersDilemmaStrategies.silent,  PrisonersDilemmaStrategies.confess => { utilities := [1, 6], same_length := rfl }
-                    | PrisonersDilemmaStrategies.confess, PrisonersDilemmaStrategies.silent  => { utilities := [6, 1], same_length := rfl }
+                    | PrisonersDilemmaStrategies.silent,  PrisonersDilemmaStrategies.silent  => { utilities := [3, 3], same_length := rfl }
+                    | PrisonersDilemmaStrategies.silent,  PrisonersDilemmaStrategies.confess => { utilities := [1, 4], same_length := rfl }
+                    | PrisonersDilemmaStrategies.confess, PrisonersDilemmaStrategies.silent  => { utilities := [4, 1], same_length := rfl }
                     | PrisonersDilemmaStrategies.confess, PrisonersDilemmaStrategies.confess => { utilities := [2, 2], same_length := rfl }
                   | _, _ => { utilities := [0, 0], same_length := rfl }
   }
@@ -101,41 +120,50 @@ def PrisonersDilemmaGame : Game PL 2 :=
     at_least_one_player := Nat.zero_lt_succ 1
   }
 
-def PrisonersDilemmaSilentProfile : StrategyProfile PL :=
+def PrisonersDilemmaSilentSilentProfile : StrategyProfile PL :=
   { strategies := λ i => match i with
                           | ⟨0, _⟩ => Strategy.pure ⟨PrisonersDilemmaStrategies.silent⟩
                           | ⟨1, _⟩ => Strategy.pure ⟨PrisonersDilemmaStrategies.silent⟩
   }
 
-theorem NotNashEquilibriumSilent : ¬ NashEquilibrium PL 2 PrisonersDilemmaGame PrisonersDilemmaSilentProfile
-  := by intro h
-        unfold NashEquilibrium at h
-        unfold PrisonersDilemmaSilentProfile at h
-        unfold PlayGame at h
-        unfold UtilityFunction.val at h
-        unfold PrisonersDilemmaGame at h
-        unfold PrisonersDilemmaUtilityFunction at h
-        simp_all
-        let x : Fin (List.length PL) := ⟨0, by exact Nat.succ_pos (List.length [PrisonersDilemmaStrategies])⟩
-        have PLxPDS : PureStrategy (List.get PL x) = PureStrategy PrisonersDilemmaStrategies := by simp_all
-                                                                                                   conv => lhs
-                                                                                                           arg 1
-                                                                                                           change PrisonersDilemmaStrategies
-        let s'' : Strategy (List.get PL x) := Strategy.pure ⟨PrisonersDilemmaStrategies.confess⟩
-        let h' : _ := h x s''
-        repeat simp at h'
-        conv at h' => rhs
-                      rhs
-                      change Fin.ofNat 0
-                      change 0
-        simp at h'
-        unfold StrategyProfile.strategies at h'
-        conv at h' => lhs
-                      rhs
-                      change Fin.ofNat 0
-                      change 0
-        sorry
+def PrisonersDilemmaSilentConfessProfile : StrategyProfile PL :=
+  { strategies := λ i => match i with
+                          | ⟨0, _⟩ => Strategy.pure ⟨PrisonersDilemmaStrategies.silent⟩
+                          | ⟨1, _⟩ => Strategy.pure ⟨PrisonersDilemmaStrategies.confess⟩
+  }
 
+theorem PDSilentConfessIsUnilateralOfPDSilentSilent : UnilateralChange PL PrisonersDilemmaSilentConfessProfile PrisonersDilemmaSilentSilentProfile (Fin.mk 1 x)
+  := by unfold UnilateralChange
+        intro i
+        cases i
+        case mk val isLt =>
+          cases val
+          case zero => left
+                       unfold PrisonersDilemmaSilentSilentProfile
+                       unfold PrisonersDilemmaSilentConfessProfile
+                       simp_all
+          case succ n =>
+            cases n
+            case zero => right
+                         simp_all
+            case succ m => rw [PL_length] at isLt
+                           conv at isLt => lhs
+                                           change m + 2
+                                           rw [add_comm]
+                           simp_all only [add_zero, add_lt_iff_neg_left, not_lt_zero']
+
+theorem NotNashEquilibriumSilent : ¬ NashEquilibrium PL 2 PrisonersDilemmaGame PrisonersDilemmaSilentSilentProfile
+  := by apply notNashEqIfBetterStrat PL 2 PrisonersDilemmaGame PrisonersDilemmaSilentConfessProfile PrisonersDilemmaSilentSilentProfile (Fin.mk 1 _)
+        pick_goal 2
+        rw [PL_length]
+        simp
+        constructor
+        case left => exact PDSilentConfessIsUnilateralOfPDSilentSilent
+        case right => unfold PlayGame PrisonersDilemmaGame PrisonersDilemmaSilentConfessProfile PrisonersDilemmaSilentSilentProfile PrisonersDilemmaUtilityFunction
+                      simp_all
+                      conv => rhs
+                              equals 3 + 1 => exact Eq.symm three_add_one_eq_four
+                      simp_all only [lt_add_iff_pos_right, zero_lt_one]
 
 -- Example: Rock-Paper-Scissors
 
@@ -196,9 +224,9 @@ noncomputable def NashDemandUtilityFunction : UtilityFunction NashDemandChoiceLi
                     let s2' : PureStrategy NashDemandChoice := by { rw [←h2]; exact s2 }
                     match s1', s2' with
                     | ⟨d1, _, _⟩, ⟨d2, _, _⟩ =>
-                      let d12 : Utility := ⟨d1 + d2⟩
-                      let oneUtility : Utility := ⟨1⟩
-                        if d12 ≤ oneUtility then { utilities := [⟨d1⟩, ⟨d2⟩], same_length := rfl }
+                      let d12 : Real := d1 + d2
+                      let oneUtility : Real := 1
+                        if d12 ≤ oneUtility then { utilities := [d1, d2], same_length := rfl }
                       else { utilities := [0, 0], same_length := rfl }
                   | _, _ => { utilities := [0, 0], same_length := rfl }
   }

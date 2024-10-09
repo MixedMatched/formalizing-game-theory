@@ -8,13 +8,7 @@ The relevant code for this repository can be found [here](https://github.com/Mix
 
 ## Formalization
 
-Our formalization starts with a definition of Utility as:
-
-```lean
-structure Utility := (val : Real)
-```
-
-which defines Utility as a real number. While many different types could be used to represent preference order, we chose to restrict the formalization to real numbers because they are a common choice in the literature and because they are easy to work with in Lean.
+Our formalization starts with a definition of Utility as equivalent to Mathlib.Data.Real. While many different types could be used to represent preference order, we chose to restrict the formalization to real numbers because they are a common choice in the literature and because they are easy to work with in Lean.
 
 We then represent a Pure Strategy as:
 
