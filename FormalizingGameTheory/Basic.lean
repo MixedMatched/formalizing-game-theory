@@ -1,7 +1,5 @@
-import Mathlib.Data.Real.Basic
 import Mathlib.Tactic
 import Aesop
-import Paperproof
 
 -- a Utility is a Real number representing the payoff of a given set of strategies
 
@@ -45,105 +43,107 @@ structure UtilityProfile (L: List Type) where
   (same_length: L.length = utilities.length)
 
 instance UtilityProfile.add : Add (UtilityProfile L) where
-  add x y := by let utilities : List Rat := List.map (λ uu => uu.fst + uu.snd) (List.zip x.utilities y.utilities)
-                let same_length : L.length = utilities.length := by unfold utilities
-                                                                    simp_all only [List.length_map, List.length_zip]
-                                                                    obtain ⟨utilities_1, same_length_1⟩ := x
-                                                                    obtain ⟨utilities_2, same_length_2⟩ := y
-                                                                    simp_all only
-                                                                    rw [← same_length_1, ← same_length_2]
-                                                                    simp_all only [min_self]
-                let up : UtilityProfile L := ⟨utilities, same_length⟩
-                exact up
+  add x y := by
+    let utilities : List Rat := List.map (λ uu => uu.fst + uu.snd) (List.zip x.utilities y.utilities)
+    let same_length : L.length = utilities.length := by unfold utilities
+                                                        simp_all only [List.length_map, List.length_zip]
+                                                        obtain ⟨utilities_1, same_length_1⟩ := x
+                                                        obtain ⟨utilities_2, same_length_2⟩ := y
+                                                        simp_all only
+                                                        rw [← same_length_1, ← same_length_2]
+                                                        simp_all only [min_self]
+    let up : UtilityProfile L := ⟨utilities, same_length⟩
+    exact up
 
 instance UtilityProfile.mul : HMul Rat (UtilityProfile L) (UtilityProfile L) where
-  hMul x y := by let utilities : List Rat := List.map (λ u => u * x) y.utilities
-                 let same_length : L.length = utilities.length := by unfold utilities
-                                                                     simp_all only [List.length_map]
-                                                                     obtain ⟨utilities_1, same_length⟩ := y
-                                                                     simp_all only
-                 let up : UtilityProfile L := ⟨utilities, same_length⟩
-                 exact up
+  hMul x y := by
+    let utilities : List Rat := List.map (λ u => u * x) y.utilities
+    let same_length : L.length = utilities.length := by unfold utilities
+                                                        simp_all only [List.length_map]
+                                                        obtain ⟨utilities_1, same_length⟩ := y
+                                                        simp_all only
+    let up : UtilityProfile L := ⟨utilities, same_length⟩
+    exact up
 
-def zero_utility_profile (L: List Type) : UtilityProfile L
-  := by let utilities : List Rat := List.map (λ _ => 0) L
-        let same_length : L.length = utilities.length := by simp_all only [List.length_map, utilities]
-        let up : UtilityProfile L := ⟨utilities, same_length⟩
-        exact up
+def zero_utility_profile (L: List Type) : UtilityProfile L := by
+  let utilities : List Rat := List.map (λ _ => 0) L
+  let same_length : L.length = utilities.length := by simp_all only [List.length_map, utilities]
+  let up : UtilityProfile L := ⟨utilities, same_length⟩
+  exact up
 
 -- eval_sp automatically converts a pure strategy utility function to a mixed strategy utility function
-def eval_sp (S: StrategyProfile L) (PSUF: PureStrategyProfile L → UtilityProfile L) (acc: PureStrategyProfile L) (id: Fin L.length) : UtilityProfile L
-  := by by_cases id_not_last : id ≥ ⟨L.length - 1, by simp_all only [tsub_lt_self_iff, zero_lt_one, and_true]
-                                                      exact Fin.pos id
-                                    ⟩
-        case pos =>
-            cases S.strategies id
-            case pure p => exact PSUF ⟨
-                                 by intro i
-                                    by_cases id_eq_i : id = i
-                                    case pos =>
-                                        rw [id_eq_i] at p
-                                        exact p
-                                    case neg =>
-                                        exact acc.strategies i
-                               ⟩
-            case mixed m => exact List.foldl (λ a b => a + b)
-                                      (by exact zero_utility_profile L)
-                                      (List.map (λ a => a.snd * (PSUF ⟨
-                                                   by intro i
-                                                      by_cases id_eq_i : id = i
-                                                      case pos =>
-                                                          apply Prod.fst at a
-                                                          rw [id_eq_i] at a
-                                                          exact a
-                                                      case neg =>
-                                                          exact acc.strategies i
-                                                ⟩))
-                                                (List.zip m.strategies m.probabilities))
-        case neg =>
-            cases S.strategies id
-            case pure p => exact eval_sp S PSUF ⟨
-                                 by intro i
-                                    by_cases id_eq_i : id = i
-                                    case pos =>
-                                        rw [id_eq_i] at p
-                                        exact p
-                                    case neg =>
-                                        exact acc.strategies i
-                               ⟩ ⟨id.val + 1, by simp_all
-                                                 conv => equals ↑id < L.length - 1 => simp_all
-                                                                                      apply Iff.intro
-                                                                                      · intro _
-                                                                                        exact id_not_last
-                                                                                      · intro _
-                                                                                        exact
-                                                                                          Nat.add_lt_of_lt_sub
-                                                                                            id_not_last
-                                                 exact id_not_last
-                                 ⟩
-            case mixed m => exact List.foldl (λ a b => a + b)
-                                      (by exact zero_utility_profile L)
-                                      (List.map (λ a => a.snd * (eval_sp S PSUF ⟨
-                                                   by intro i
-                                                      by_cases id_eq_i : id = i
-                                                      case pos =>
-                                                          apply Prod.fst at a
-                                                          rw [id_eq_i] at a
-                                                          exact a
-                                                      case neg =>
-                                                          exact acc.strategies i
-                                                ⟩ ⟨id.val + 1, by simp_all
-                                                                  conv => equals ↑id < L.length - 1 =>  simp_all
-                                                                                                        apply Iff.intro
-                                                                                                        · intro _
-                                                                                                          exact id_not_last
-                                                                                                        · intro _
-                                                                                                          exact
-                                                                                                            Nat.add_lt_of_lt_sub
-                                                                                                              id_not_last
-                                                                  exact id_not_last
-                                                  ⟩))
-                                                (List.zip m.strategies m.probabilities))
+def eval_sp (S: StrategyProfile L) (PSUF: PureStrategyProfile L → UtilityProfile L) (acc: PureStrategyProfile L) (id: Fin L.length) : UtilityProfile L := by
+  by_cases id_not_last : id ≥ ⟨L.length - 1, by simp_all only [tsub_lt_self_iff, zero_lt_one, and_true]
+                                                exact Fin.pos id
+                              ⟩
+  case pos =>
+      cases S.strategies id
+      case pure p => exact PSUF ⟨
+                            by  intro i
+                                by_cases id_eq_i : id = i
+                                case pos =>
+                                    rw [id_eq_i] at p
+                                    exact p
+                                case neg =>
+                                    exact acc.strategies i
+                          ⟩
+      case mixed m => exact List.foldl (λ a b => a + b)
+                                (by exact zero_utility_profile L)
+                                (List.map (λ a => a.snd * (PSUF ⟨
+                                              by  intro i
+                                                  by_cases id_eq_i : id = i
+                                                  case pos =>
+                                                      apply Prod.fst at a
+                                                      rw [id_eq_i] at a
+                                                      exact a
+                                                  case neg =>
+                                                      exact acc.strategies i
+                                          ⟩))
+                                          (List.zip m.strategies m.probabilities))
+  case neg =>
+      cases S.strategies id
+      case pure p => exact eval_sp S PSUF ⟨
+                            by  intro i
+                                by_cases id_eq_i : id = i
+                                case pos =>
+                                    rw [id_eq_i] at p
+                                    exact p
+                                case neg =>
+                                    exact acc.strategies i
+                          ⟩ ⟨id.val + 1, by simp_all
+                                            conv => equals ↑id < L.length - 1 =>  simp_all
+                                                                                  apply Iff.intro
+                                                                                  · intro _
+                                                                                    exact id_not_last
+                                                                                  · intro _
+                                                                                    exact
+                                                                                      Nat.add_lt_of_lt_sub
+                                                                                        id_not_last
+                                            exact id_not_last
+                            ⟩
+      case mixed m => exact List.foldl (λ a b => a + b)
+                                (by exact zero_utility_profile L)
+                                (List.map (λ a => a.snd * (eval_sp S PSUF ⟨
+                                              by  intro i
+                                                  by_cases id_eq_i : id = i
+                                                  case pos =>
+                                                      apply Prod.fst at a
+                                                      rw [id_eq_i] at a
+                                                      exact a
+                                                  case neg =>
+                                                      exact acc.strategies i
+                                          ⟩ ⟨id.val + 1, by simp_all
+                                                            conv => equals ↑id < L.length - 1 =>  simp_all
+                                                                                                  apply Iff.intro
+                                                                                                  · intro _
+                                                                                                    exact id_not_last
+                                                                                                  · intro _
+                                                                                                    exact
+                                                                                                      Nat.add_lt_of_lt_sub
+                                                                                                        id_not_last
+                                                            exact id_not_last
+                                            ⟩))
+                                          (List.zip m.strategies m.probabilities))
 termination_by L.length - id
 
 -- a UtilityFunction is a function that takes a StrategyProfile and returns a Utility
@@ -166,24 +166,25 @@ structure Game (L: List Type) (N: Nat) where
   (at_least_one_player: N > 0)
   (pure_strategy_profile: PureStrategyProfile L)
 
-def Game.strategy_profile : Game L N → StrategyProfile L
-  := by intro g
-        have psp : PureStrategyProfile L := by exact g.pure_strategy_profile
-        let sp : StrategyProfile L := ⟨λ i => Strategy.pure (psp.strategies i)⟩
-        exact sp
+def Game.strategy_profile : Game L N → StrategyProfile L := by
+  intro g
+  have psp : PureStrategyProfile L := by exact g.pure_strategy_profile
+  let sp : StrategyProfile L := ⟨λ i => Strategy.pure (psp.strategies i)⟩
+  exact sp
 
-def PlayPureGame (L: List Type) (N: Nat) (G: Game L N) (PS: PureStrategyProfile L) : UtilityProfile L := G.utility.pure_apply PS
+def PlayPureGame (L: List Type) (N: Nat) (G: Game L N) (PS: PureStrategyProfile L) : UtilityProfile L :=
+  G.utility.pure_apply PS
 
 -- a PlayGame is a function that takes a Game, a StrategyProfile, and returns a list of Utilities
 @[aesop norm unfold]
-def PlayGame (L: List Type) (N: Nat) (G: Game L N) (S: StrategyProfile L) : UtilityProfile L
-  := G.utility.apply
-      (by simp_all only [gt_iff_lt]
-          obtain ⟨_, same_length, at_least_one_player, _⟩ := G
-          subst same_length
-          simp_all only [gt_iff_lt])
-      (by exact G.pure_strategy_profile)
-      S
+def PlayGame (L: List Type) (N: Nat) (G: Game L N) (S: StrategyProfile L) : UtilityProfile L :=
+  G.utility.apply
+    (by simp_all only [gt_iff_lt]
+        obtain ⟨_, same_length, at_least_one_player, _⟩ := G
+        subst same_length
+        simp_all only [gt_iff_lt])
+    (by exact G.pure_strategy_profile)
+    S
 
 -- two strategy profiles are NChange with a list of deltas if those profiles are only possibly
 -- different at those deltas
@@ -213,250 +214,213 @@ def NashEquilibrium (L: List Type) (N: Nat) (G: Game L N) (S: StrategyProfile L)
     UnilateralChange L S S' delta → DoesAtLeastAsWellAs L N G S S' delta
 
 @[simp]
-theorem nchange_comm:
-  ∀ (S': StrategyProfile L)
-    (_: NChange L S S' deltas),
-    NChange L S' S deltas
-    := by intro S' og
-          unfold NChange at og ⊢
-          conv => ext i
-                  pattern S'.strategies i = S.strategies i
-                  rw [eq_comm]
-          exact og
+theorem nchange_comm: ∀ (S': StrategyProfile L) (_: NChange L S S' deltas), NChange L S' S deltas := by
+  intro S' og
+  unfold NChange at og ⊢
+  conv => ext i
+          pattern S'.strategies i = S.strategies i
+          rw [eq_comm]
+  exact og
 
 @[simp]
-theorem nchange_self:
-  NChange L S S deltas
-  := by unfold NChange
-        intro i
-        left
-        rfl
+theorem nchange_self: NChange L S S deltas := by
+  unfold NChange
+  intro i
+  left
+  rfl
 
 @[simp]
-theorem nchange_trans:
-  NChange L S S' deltas1 → NChange L S' S'' deltas2 → NChange L S S'' (deltas1 ++ deltas2)
-  := by intro nc1 nc2
-        unfold NChange at nc1 nc2 ⊢
-        intro i
-        specialize nc1 i
-        specialize nc2 i
-        simp_all only [List.get_eq_getElem, List.elem_eq_mem, decide_eq_true_eq, List.mem_append, Bool.decide_or,
-          Bool.or_eq_true]
-        cases nc1 with
-        | inl h =>
-          cases nc2 with
-          | inl h_1 => simp_all only [true_or]
-          | inr h_2 => simp_all only [or_true]
-        | inr h_1 =>
-          cases nc2 with
-          | inl h => simp_all only [true_or, or_true]
-          | inr h_2 => simp_all only [or_self, or_true]
+theorem nchange_trans: NChange L S S' deltas1 → NChange L S' S'' deltas2 → NChange L S S'' (deltas1 ++ deltas2) := by
+  intro nc1 nc2
+  unfold NChange at nc1 nc2 ⊢
+  intro i
+  specialize nc1 i
+  specialize nc2 i
+  simp_all only [List.get_eq_getElem, List.elem_eq_mem, decide_eq_true_eq, List.mem_append, Bool.decide_or,
+    Bool.or_eq_true]
+  cases nc1 with
+  | inl h =>
+    cases nc2 with
+    | inl h_1 => simp_all only [true_or]
+    | inr h_2 => simp_all only [or_true]
+  | inr h_1 =>
+    cases nc2 with
+    | inl h => simp_all only [true_or, or_true]
+    | inr h_2 => simp_all only [or_self, or_true]
 
 @[simp]
-theorem nchange_split:
-  NChange L S S'' (deltas1 ++ deltas2) → ∃ (S': StrategyProfile L), NChange L S S' deltas1 ∧ NChange L S' S'' deltas2
-  := by intro nc
-        constructor
-        case w =>
-          exact ⟨λ x => if deltas2.contains x then S.strategies x else S''.strategies x⟩
-        case h =>
-          constructor
-          case left =>
-            intro i
-            specialize nc i
-            cases nc
-            case inl h =>
-              simp_all only [List.get_eq_getElem, List.elem_eq_mem, decide_eq_true_eq, ite_self, true_or]
-            case inr h =>
-              simp_all only [List.elem_eq_mem, List.mem_append, Bool.decide_or, Bool.or_eq_true, decide_eq_true_eq,
-                List.get_eq_getElem]
-              obtain ⟨strategies⟩ := S
-              obtain ⟨strategies_1⟩ := S''
-              simp_all only
-              cases h with
-              | inl h_1 => simp_all only [or_true]
-              | inr h_2 => simp_all only [↓reduceIte, true_or]
-          case right =>
-            intro i
-            specialize nc i
-            cases nc
-            case inl h =>
-              simp_all only [List.get_eq_getElem, List.elem_eq_mem, decide_eq_true_eq, ite_self, true_or]
-            case inr h =>
-              by_cases hdelta : deltas2.contains i
-              case pos =>
-                simp_all only [List.elem_eq_mem, List.mem_append, Bool.decide_or, Bool.or_eq_true, decide_eq_true_eq,
-                  List.get_eq_getElem, decide_True, ↓reduceIte, or_true]
-              case neg =>
-                simp_all only [List.elem_eq_mem, List.mem_append, Bool.decide_or, Bool.or_eq_true, decide_eq_true_eq,
-                  List.get_eq_getElem, decide_False, Bool.false_eq_true, ↓reduceIte, or_false]
+theorem nchange_split: NChange L S S'' (deltas1 ++ deltas2) → ∃ (S': StrategyProfile L), NChange L S S' deltas1 ∧ NChange L S' S'' deltas2 := by
+  intro nc
+  constructor
+  case w =>
+    exact ⟨λ x => if deltas2.contains x then S.strategies x else S''.strategies x⟩
+  case h =>
+    constructor
+    case left =>
+      intro i
+      specialize nc i
+      cases nc
+      case inl h =>
+        simp_all only [List.get_eq_getElem, List.elem_eq_mem, decide_eq_true_eq, ite_self, true_or]
+      case inr h =>
+        simp_all only [List.elem_eq_mem, List.mem_append, Bool.decide_or, Bool.or_eq_true, decide_eq_true_eq,
+          List.get_eq_getElem]
+        obtain ⟨strategies⟩ := S
+        obtain ⟨strategies_1⟩ := S''
+        simp_all only
+        cases h with
+        | inl h_1 => simp_all only [or_true]
+        | inr h_2 => simp_all only [↓reduceIte, true_or]
+    case right =>
+      intro i
+      specialize nc i
+      cases nc
+      case inl h =>
+        simp_all only [List.get_eq_getElem, List.elem_eq_mem, decide_eq_true_eq, ite_self, true_or]
+      case inr h =>
+        by_cases hdelta : deltas2.contains i
+        case pos =>
+          simp_all only [List.elem_eq_mem, List.mem_append, Bool.decide_or, Bool.or_eq_true, decide_eq_true_eq,
+            List.get_eq_getElem, decide_True, ↓reduceIte, or_true]
+        case neg =>
+          simp_all only [List.elem_eq_mem, List.mem_append, Bool.decide_or, Bool.or_eq_true, decide_eq_true_eq,
+            List.get_eq_getElem, decide_False, Bool.false_eq_true, ↓reduceIte, or_false]
 
 @[simp]
-theorem eventually_nchange:
-  ∃ (deltas: List (Fin (List.length L))),
-    NChange L S S' deltas
-    := by unfold NChange
-          let deltas : List (Fin (List.length L)) := List.finRange (List.length L)
-          use deltas
-          intro i
-          right
-          simp_all only [List.elem_eq_mem, List.mem_finRange, decide_True, deltas]
+theorem eventually_nchange: ∃ (deltas: List (Fin (List.length L))), NChange L S S' deltas := by
+  unfold NChange
+  let deltas : List (Fin (List.length L)) := List.finRange (List.length L)
+  use deltas
+  intro i
+  right
+  simp_all only [List.elem_eq_mem, List.mem_finRange, decide_True, deltas]
 
 @[simp]
-theorem uc_comm:
-  ∀ (S': StrategyProfile L)
-    (_: UnilateralChange L S S' delta),
-    UnilateralChange L S' S delta
-    := by intro S' og
-          unfold UnilateralChange at og ⊢
-          exact nchange_comm S' og
+theorem uc_comm: ∀ (S': StrategyProfile L) (_: UnilateralChange L S S' delta), UnilateralChange L S' S delta := by
+  intro S' og
+  unfold UnilateralChange at og ⊢
+  exact nchange_comm S' og
 
 @[simp]
-theorem uc_self:
-  UnilateralChange L S S delta
-  := by unfold UnilateralChange
-        exact nchange_self
+theorem uc_self: UnilateralChange L S S delta := by
+  unfold UnilateralChange
+  exact nchange_self
 
 @[simp]
-theorem uc_trans:
-  UnilateralChange L S S' delta1 → UnilateralChange L S' S'' delta2 → NChange L S S'' [delta1, delta2]
-  := by intro uc1 uc2
-        unfold UnilateralChange at uc1 uc2
-        rw [← List.singleton_append]
-        exact nchange_trans uc1 uc2
+theorem uc_trans: UnilateralChange L S S' delta1 → UnilateralChange L S' S'' delta2 → NChange L S S'' [delta1, delta2] := by
+  intro uc1 uc2
+  unfold UnilateralChange at uc1 uc2
+  rw [← List.singleton_append]
+  exact nchange_trans uc1 uc2
 
 @[simp]
 theorem nchange_to_list_nchange (NC: NChange L S S' deltas):
   ∀ (i: Fin (List.length deltas)),
+    (h: (List.length deltas) > 0) →
     ∃ (x x': StrategyProfile L),
-      NChange L x x' [deltas[i]]
-      := by intro i
-            simp_all only [List.get_eq_getElem, List.elem_eq_mem, decide_eq_true_eq, Fin.getElem_fin, List.mem_singleton]
-            obtain ⟨strategies⟩ := S
-            apply Exists.intro
-            · apply Exists.intro
-              · intro i_1
-                apply Or.inl
-                rfl
-              · apply StrategyProfile.mk
-                intro i_1
-                simp_all only [List.get_eq_getElem]
-                apply strategies
-
-@[simp]
-theorem nchange_to_list_uc (NC: NChange L S S' deltas):
-  ∀ (i: Fin (List.length deltas)),
-    ∃ (x x': StrategyProfile L),
-      UnilateralChange L x x' deltas[i]
-      := by exact fun i ↦ nchange_to_list_nchange NC i
-
-theorem eventually_uc:
-  ∃ (LS: List (StrategyProfile L)),
-    LS ≠ [] ∧ LS[0]'sorry = S ∧ LS[LS.length - 1]'sorry = S' ∧
-    ∀ (i: Fin (List.length LS)),
-      i > ⟨0, sorry⟩ →
-        ∃ (cdelta: Fin (List.length L)),
-        UnilateralChange L (LS.get (i - ⟨1, sorry⟩)) (LS.get i) cdelta
+      i = ⟨0, by simp_all only [List.get_eq_getElem, List.elem_eq_mem, decide_eq_true_eq, gt_iff_lt]⟩
+        → x = S
+      ∧ i = ⟨deltas.length - 1, by simp_all only [List.get_eq_getElem, List.elem_eq_mem, decide_eq_true_eq, gt_iff_lt, tsub_lt_self_iff, zero_lt_one, and_self]⟩
+        → x' = S'
+      ∧ NChange L x x' [deltas[i]]
       := by sorry
 
 @[simp]
-theorem dalawa_inv:
-  ∀ (S': StrategyProfile L),
-    ¬DoesAtLeastAsWellAs L N G S S' delta → DoesAtLeastAsWellAs L N G S' S delta
-    := by intro S' not_dalawa
-          unfold DoesAtLeastAsWellAs at not_dalawa ⊢
-          simp_all only [List.get_eq_getElem, Fin.coe_cast, not_le]
-          exact le_of_lt not_dalawa
+theorem nchange_to_ex_uc (NC: NChange L S S' deltas):
+  ∀ (i: Fin (List.length deltas)),
+    (h: (List.length deltas) > 0) →
+    ∃ (x x': StrategyProfile L),
+      i = ⟨0, by simp_all only [List.get_eq_getElem, List.elem_eq_mem, decide_eq_true_eq, gt_iff_lt]⟩
+        → x = S
+      ∧ i = ⟨deltas.length - 1, by simp_all only [List.get_eq_getElem, List.elem_eq_mem, decide_eq_true_eq, gt_iff_lt, tsub_lt_self_iff, zero_lt_one, and_self]⟩
+        → x' = S'
+      ∧ UnilateralChange L x x' deltas[i]
+      := by sorry
+            -- exact fun i ↦ nchange_to_list_nchange NC i
+
+theorem eventually_uc:
+  ∃ (LS: List (StrategyProfile L)),
+    (hl: LS ≠ []) → (
+      LS[0]'(by exact List.length_pos.mpr hl) = S ∧
+      LS[LS.length - 1]'(by simp_all only [ne_eq, tsub_lt_self_iff, zero_lt_one, and_true]
+                            exact List.length_pos.mpr hl) = S' ∧
+    ∀ (i: Fin (List.length LS)),
+      (hi: i - 1 < LS.length) →
+        ∃ (cdelta: Fin (List.length L)),
+        UnilateralChange L (LS.get ⟨i.val - 1, by simp_all only [ne_eq]⟩) (LS.get i) cdelta)
+      := by sorry
 
 @[simp]
-theorem dalawa_self:
-  DoesAtLeastAsWellAs L N G S S delta
-    := by unfold DoesAtLeastAsWellAs
-          simp_all
+theorem dalawa_inv: ¬DoesAtLeastAsWellAs L N G S S' delta → DoesAtLeastAsWellAs L N G S' S delta := by
+  intro not_dalawa
+  unfold DoesAtLeastAsWellAs at not_dalawa ⊢
+  simp_all only [List.get_eq_getElem, Fin.coe_cast, not_le]
+  exact le_of_lt not_dalawa
 
 @[simp]
-theorem nasheq_exists:
-  ∃ (S: StrategyProfile L), NashEquilibrium L N G S
-  := by cases N
-        case zero => have impossible : 0 > 0 := by exact (Game.at_least_one_player G)
-                     tauto
-        case succ n =>
-          have S : StrategyProfile L := by exact G.strategy_profile
-          by_cases h : ∃ (x: StrategyProfile L), x ≠ S
-          case neg =>
-            simp_all
-            use S
-            unfold NashEquilibrium
-            intro S' delta uc
-            specialize h S'
-            rw[h]
-            exact dalawa_self
-          case pos =>
-            simp_all
-            obtain ⟨S', neq⟩ := h
-            sorry -- we need to use a fixed point theorem here :p
+theorem dalawa_self: DoesAtLeastAsWellAs L N G S S delta := by
+  unfold DoesAtLeastAsWellAs
+  simp_all only [List.get_eq_getElem, Fin.coe_cast, le_refl]
 
 @[simp]
-theorem not_nasheq_if_uc_better:
-  UnilateralChange L A B i ∧ ¬DoesAtLeastAsWellAs L N G B A i → ¬NashEquilibrium L N G B
-  := by intro h ne
-        unfold NashEquilibrium at ne
-        have uc: UnilateralChange L B A i := by apply And.left at h
-                                                apply uc_comm at h
-                                                exact h
-        apply ne at uc
-        let au: UtilityProfile L := (PlayGame L N G A)
-        let bu: UtilityProfile L := (PlayGame L N G B)
-        have greater: au.utilities.get (Fin.cast au.same_length i) > bu.utilities.get (Fin.cast bu.same_length i)
-          := by apply And.right at h
-                unfold DoesAtLeastAsWellAs at h
-                simp_all only [List.get_eq_getElem, Fin.coe_cast, not_le, gt_iff_lt]
-        apply not_le_of_gt at greater
-        tauto
+theorem nasheq_exists: NashEquilibrium L N G S
+  := by sorry -- we need to use a fixed point theorem here :p
 
 @[simp]
-theorem exists_better_uc_if_not_nasheq:
-  ¬NashEquilibrium L N G S → (∃ (S': StrategyProfile L) (delta: Fin (List.length L)), UnilateralChange L S S' delta ∧ DoesAtLeastAsWellAs L N G S' S delta)
-  := by intro not_ne
-        unfold NashEquilibrium at not_ne
-        simp_all
-        obtain ⟨S', h⟩ := not_ne
-        obtain ⟨delta, h⟩ := h
-        obtain ⟨left, right⟩ := h
-        apply dalawa_inv at right
-        use S'
-        use delta
+theorem not_nasheq_if_uc_better: UnilateralChange L A B i ∧ ¬DoesAtLeastAsWellAs L N G B A i → ¬NashEquilibrium L N G B := by
+  intro h ne
+  unfold NashEquilibrium at ne
+  have uc: UnilateralChange L B A i := by apply And.left at h
+                                          apply uc_comm at h
+                                          exact h
+  apply ne at uc
+  let au: UtilityProfile L := (PlayGame L N G A)
+  let bu: UtilityProfile L := (PlayGame L N G B)
+  have greater: au.utilities.get (Fin.cast au.same_length i) > bu.utilities.get (Fin.cast bu.same_length i)
+    := by apply And.right at h
+          unfold DoesAtLeastAsWellAs at h
+          simp_all only [List.get_eq_getElem, Fin.coe_cast, not_le, gt_iff_lt]
+  apply not_le_of_gt at greater
+  tauto
 
 @[simp]
-theorem better_than_all_ucs_is_nasheq:
-  (∀ (S': StrategyProfile L) (delta: Fin (List.length L)),
-    UnilateralChange L S S' delta → DoesAtLeastAsWellAs L N G S S' delta) → NashEquilibrium L N G S
-    := by intro as'delta
-          unfold NashEquilibrium
-          intro S' delta uc
-          apply as'delta at uc
-          exact uc
+theorem exists_better_uc_if_not_nasheq: ¬NashEquilibrium L N G S → (∃ (S': StrategyProfile L) (delta: Fin (List.length L)), UnilateralChange L S S' delta ∧ DoesAtLeastAsWellAs L N G S' S delta) := by
+  intro not_ne
+  unfold NashEquilibrium at not_ne
+  simp_all
+  obtain ⟨S', h⟩ := not_ne
+  obtain ⟨delta, h⟩ := h
+  obtain ⟨left, right⟩ := h
+  apply dalawa_inv at right
+  use S'
+  use delta
 
 @[simp]
-theorem all_ucs_not_nash_eq_then_nash_eq:
-  (∀ (S': StrategyProfile L) (delta: Fin (List.length L)),
-    UnilateralChange L S S' delta → ¬NashEquilibrium L N G S') → NashEquilibrium L N G S
-    := by have ene : ∃ (Sne: StrategyProfile L), NashEquilibrium L N G Sne
-            := by exact nasheq_exists
-          obtain ⟨Sne, nes'⟩ := ene
-          intro as'delta S' delta uc
-          by_cases S_is_ne : Sne = S
-          case pos =>
-            subst S_is_ne
-            apply nes'
-            exact uc
-          case neg =>
-            by_cases ne_is_uc : UnilateralChange L S Sne delta
-            case pos =>
-              specialize as'delta Sne delta ne_is_uc
-              tauto
-            case neg =>
-              sorry
+theorem better_than_all_ucs_is_nasheq: (∀ (S': StrategyProfile L) (delta: Fin (List.length L)), UnilateralChange L S S' delta → DoesAtLeastAsWellAs L N G S S' delta) → NashEquilibrium L N G S := by
+  intro as'delta
+  unfold NashEquilibrium
+  intro S' delta uc
+  apply as'delta at uc
+  exact uc
+
+@[simp]
+theorem all_ucs_not_nash_eq_then_nash_eq: (∀ (S': StrategyProfile L) (delta: Fin (List.length L)), UnilateralChange L S S' delta → ¬NashEquilibrium L N G S') → NashEquilibrium L N G S := by
+  have Sne : StrategyProfile L := G.strategy_profile
+  have nes' : NashEquilibrium L N G Sne
+    := by exact nasheq_exists
+  intro as'delta S' delta uc
+  by_cases S_is_ne : Sne = S
+  case pos =>
+    subst S_is_ne
+    apply nes'
+    exact uc
+  case neg =>
+    by_cases ne_is_uc : UnilateralChange L S Sne delta
+    case pos =>
+      specialize as'delta Sne delta ne_is_uc
+      tauto
+    case neg =>
+      sorry
 
 -- Example: Prisoner's Dilemma
 -- Two prisoners are arrested for a crime. They are held in separate cells and cannot communicate with each other.
@@ -528,44 +492,55 @@ def PrisonersDilemmaGame : Game PL 2 :=
   pure_strategy_profile := by exact PrisonersDilemmaPureProfile
 }
 
-theorem PDSilentConfessIsUnilateralOfPDSilentSilent : UnilateralChange PL PrisonersDilemmaSilentConfessProfile PrisonersDilemmaSilentSilentProfile (Fin.mk 1 x)
-  := by unfold UnilateralChange
-        intro i
-        cases i
-        case mk val isLt =>
-          cases val
-          case zero => left
-                       unfold PrisonersDilemmaSilentSilentProfile
-                       unfold PrisonersDilemmaSilentConfessProfile
-                       simp_all
-          case succ n =>
-            cases n
-            case zero => right
-                         simp_all
-            case succ m => rw [PL_length] at isLt
-                           conv at isLt => lhs
-                                           change m + 2
-                                           rw [add_comm]
-                           simp_all only [add_zero, add_lt_iff_neg_left, not_lt_zero']
+theorem PDSilentConfessIsUnilateralOfPDSilentSilent : UnilateralChange PL PrisonersDilemmaSilentConfessProfile PrisonersDilemmaSilentSilentProfile (Fin.mk 1 x) := by
+  unfold UnilateralChange
+  intro i
+  cases i
+  case mk val isLt =>
+    cases val
+    case zero =>  left
+                  unfold PrisonersDilemmaSilentSilentProfile
+                  unfold PrisonersDilemmaSilentConfessProfile
+                  simp_all
+    case succ n =>
+      cases n
+      case zero =>  right
+                    simp_all
+      case succ m =>  rw [PL_length] at isLt
+                      conv at isLt => lhs
+                                      change m + 2
+                                      rw [add_comm]
+                      simp_all only [add_zero, add_lt_iff_neg_left, not_lt_zero']
 
-theorem NotNashEquilibriumSilentSilent : ¬ NashEquilibrium PL 2 PrisonersDilemmaGame PrisonersDilemmaSilentSilentProfile
-  := by apply not_nasheq_if_uc_better
-        case i =>
-          rw [PL_length]
-          exact Fin.last 1
-        case a =>
-          constructor
-          case left => exact PDSilentConfessIsUnilateralOfPDSilentSilent
-          case right => unfold PL PrisonersDilemmaGame PrisonersDilemmaSilentSilentProfile
-                          PrisonersDilemmaSilentConfessProfile PrisonersDilemmaPureProfile PrisonersDilemmaUtilityFunction
-                          DoesAtLeastAsWellAs PlayGame UtilityFunction.apply eval_sp
-                        simp_all [↓dreduceDIte]
-                        unfold eval_sp
-                        simp_all [↓reduceDIte]
-                        rfl
+theorem NotNashEquilibriumSilentSilent : ¬ NashEquilibrium PL 2 PrisonersDilemmaGame PrisonersDilemmaSilentSilentProfile := by
+  apply not_nasheq_if_uc_better
+  case i =>
+    rw [PL_length]
+    exact Fin.last 1
+  case a =>
+    constructor
+    case left => exact PDSilentConfessIsUnilateralOfPDSilentSilent
+    case right => unfold PL PrisonersDilemmaGame PrisonersDilemmaSilentSilentProfile
+                    PrisonersDilemmaSilentConfessProfile PrisonersDilemmaPureProfile PrisonersDilemmaUtilityFunction
+                    DoesAtLeastAsWellAs PlayGame UtilityFunction.apply eval_sp
+                  simp_all [↓dreduceDIte]
+                  unfold eval_sp
+                  simp_all [↓reduceDIte]
+                  rfl
 
-theorem NashEquilibriumConfessConfess : NashEquilibrium PL 2 PrisonersDilemmaGame PrisonersDilemmaConfessConfessProfile
-  := by sorry
+theorem NashEquilibriumConfessConfess : NashEquilibrium PL 2 PrisonersDilemmaGame PrisonersDilemmaConfessConfessProfile := by
+  apply better_than_all_ucs_is_nasheq
+  unfold PL PrisonersDilemmaGame PrisonersDilemmaPureProfile PrisonersDilemmaUtilityFunction PrisonersDilemmaConfessConfessProfile
+    DoesAtLeastAsWellAs PlayGame UtilityFunction.apply eval_sp
+  intro sp delta uc
+  intro thisUtilities otherUtilities
+  unfold UnilateralChange at uc
+  unfold NChange at uc
+  simp_all [↓dreduceDIte, otherUtilities, thisUtilities]
+  obtain ⟨strategies⟩ := sp
+  simp_all only [Fin.isValue]
+  sorry
+
 
 -- Example: Rock-Paper-Scissors
 

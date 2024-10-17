@@ -8,7 +8,7 @@ The relevant code for this repository can be found [here](https://github.com/Mix
 
 ## Formalization
 
-Our formalization starts with a definition of Utility as equivalent to Mathlib.Data.Real. While many different types could be used to represent preference order, we chose to restrict the formalization to real numbers because they are a common choice in the literature and because they are easy to work with in Lean.
+Our formalization starts with a definition of Utility as equivalent to Mathlib.Data.Rat. While many different types could be used to represent preference order, we chose to restrict the formalization to rational numbers because they still have the properties of total order and continuity, while also being easy to work with in Lean (comparisons between the rationals are decidable, while comparisons between the reals are not).
 
 We then represent a Pure Strategy as:
 
@@ -28,7 +28,7 @@ and a strategy for player 1 could be formalized as the instance `PureStrategy St
 
 ```lean
 structure NashDemandStrategies :=
-    (demand : Real)
+    (demand : Rat)
     (above_0: demand > 0)
     (below_1: demand < 1)
 ```
@@ -39,13 +39,14 @@ We then represent a Mixed Strategy as:
 
 ```lean
 structure MixedStrategy (A : Type) :=
-  (strategies: List A)
-  (probabilities: List Real)
+  (strategies: List (PureStrategy A))
+  (probabilities: List Rat)
   (probabilities_sum_to_one: List.foldl (a + b) 0 probabilities = 1)
+  (probabilities_non_negative: List.all probabilities (λ p => p > 0))
   (same_length: List.length strategies = List.length probabilities)
 ```
 
-which defines a Mixed Strategy as a list of Pure Strategies and a list of probabilities. 
+which defines a Mixed Strategy as a list of Pure Strategies and a list of probabilities, as well as constraints on those lists.
 
 Then, a Strategy is defined as either a Pure Strategy or a Mixed Strategy:
 
@@ -68,18 +69,26 @@ A Utility Profile, which is a list of utilities, is then defined as:
 
 ```lean
 structure UtilityProfile (L: List Type) where
-  (utilities: List Real)
+  (utilities: List Rat)
   (same_length: List.length L = List.length utilities)
 ```
 
 And the Utility Function is defined as:
 
 ```lean
-structure UtilityFunction (L: List Type) where
-  (val: StrategyProfile L → UtilityProfile L)
+inductive UtilityFunction (L: List Type) where
+  | mk (x: PureStrategyProfile L → UtilityProfile L) : UtilityFunction L
 ```
 
-which essentially maps a Strategy Profile to a Utility Profile.
+which essentially maps a pure strategy profile to a utility profile. To map a full strategy profile (i.e. one including mixed strategies) to a utility profile, you use UtilityProfile.apply, which automatically converts a pure function into a mixed one:
+
+```lean
+@[aesop norm unfold]
+def UtilityFunction.apply : UtilityFunction L → L.length > 0 → PureStrategyProfile L → StrategyProfile L → UtilityProfile L
+  | mk x => λ l psp sp => eval_sp sp x psp ⟨0, l⟩
+```
+
+One thing to note is that this process of automatic conversion, though not very computationally taxing, is quite taxing for proof writing, as it makes statements become quite large.
 
 Finally, a Game is defined as:
 
@@ -88,12 +97,20 @@ structure Game (L: List Type) (N: Nat) where
   (utility: UtilityFunction L)
   (same_length: (List.length L) = N)
   (at_least_one_player: N > 0)
+  (pure_strategy_profile: PureStrategyProfile L)
 ```
 
 and an instance of a Game is defined as:
 
 ```lean
-def PlayGame (L: List Type) (N: Nat) (G: Game L N) (S: StrategyProfile L) : UtilityProfile L := G.utility.val S
+def PlayGame (L: List Type) (N: Nat) (G: Game L N) (S: StrategyProfile L) : UtilityProfile L :=
+  G.utility.apply
+    (by simp_all only [gt_iff_lt]
+        obtain ⟨_, same_length, at_least_one_player, _⟩ := G
+        subst same_length
+        simp_all only [gt_iff_lt])
+    (by exact G.pure_strategy_profile)
+    S
 ```
 
 which applies the utility function of the game to a given strategy profile to get a utility profile.
@@ -115,42 +132,104 @@ The Prisoner's Dilemma is a classic game in Game Theory. It is a two-player game
 
 | Player 1 / Player 2 | Cooperate | Defect |
 | ------------------- | --------- | ------ |
-| Cooperate           | 4, 4      | 1, 6   |
-| Defect              | 6, 1      | 2, 2   |
+| Cooperate           | 3, 3      | 1, 4   |
+| Defect              | 4, 1      | 2, 2   |
 
 We created an example formalization of the Prisoner's Dilemma in Lean as follows:
 
 ```lean
-inductive PrisonersDilemmaStrategies
+inductive PrisonersDilemmaStrategies where
 | silent
 | confess
 
 def PL : List Type := [PrisonersDilemmaStrategies, PrisonersDilemmaStrategies]
+
 def PL_length : List.length PL = 2 := rfl
 
 def PrisonersDilemmaUtilityFunction : UtilityFunction PL :=
-  { val := λ S => match S.strategies (Fin.ofNat 0), S.strategies (Fin.ofNat 1) with
-                  | Strategy.pure s1, Strategy.pure s2 =>
-                    have h1 : PureStrategy (List.get PL (Fin.ofNat 0)) = PureStrategy PrisonersDilemmaStrategies := rfl
-                    have h2 : PureStrategy (List.get PL (Fin.ofNat 1)) = PureStrategy PrisonersDilemmaStrategies := rfl
-                    let s1' : PureStrategy PrisonersDilemmaStrategies := by { rw [←h1]; exact s1 }
-                    let s2' : PureStrategy PrisonersDilemmaStrategies := by { rw [←h2]; exact s2 }
-                    match s1'.val, s2'.val with
-                    | PrisonersDilemmaStrategies.silent,  PrisonersDilemmaStrategies.silent  => { utilities := [4, 4], same_length := rfl }
-                    | PrisonersDilemmaStrategies.silent,  PrisonersDilemmaStrategies.confess => { utilities := [1, 6], same_length := rfl }
-                    | PrisonersDilemmaStrategies.confess, PrisonersDilemmaStrategies.silent  => { utilities := [6, 1], same_length := rfl }
-                    | PrisonersDilemmaStrategies.confess, PrisonersDilemmaStrategies.confess => { utilities := [2, 2], same_length := rfl }
-                  | _, _ => { utilities := [0, 0], same_length := rfl }
+  ⟨λ S => match (S.strategies (Fin.ofNat 0)).val, (S.strategies (Fin.ofNat 1)).val with
+          | PrisonersDilemmaStrategies.silent,  PrisonersDilemmaStrategies.silent  => { utilities := [3, 3], same_length := rfl }
+          | PrisonersDilemmaStrategies.silent,  PrisonersDilemmaStrategies.confess => { utilities := [1, 4], same_length := rfl }
+          | PrisonersDilemmaStrategies.confess, PrisonersDilemmaStrategies.silent  => { utilities := [4, 1], same_length := rfl }
+          | PrisonersDilemmaStrategies.confess, PrisonersDilemmaStrategies.confess => { utilities := [2, 2], same_length := rfl }
+  ⟩
+
+def PrisonersDilemmaPureProfile : PureStrategyProfile PL :=
+  { strategies := λ i => match i with
+                          | ⟨0, _⟩ => ⟨PrisonersDilemmaStrategies.silent⟩
+                          | ⟨1, _⟩ => ⟨PrisonersDilemmaStrategies.silent⟩
+  }
+
+def PrisonersDilemmaSilentSilentProfile : StrategyProfile PL :=
+  { strategies := λ i => match i with
+                          | ⟨0, _⟩ => Strategy.pure ⟨PrisonersDilemmaStrategies.silent⟩
+                          | ⟨1, _⟩ => Strategy.pure ⟨PrisonersDilemmaStrategies.silent⟩
+  }
+
+def PrisonersDilemmaSilentConfessProfile : StrategyProfile PL :=
+  { strategies := λ i => match i with
+                          | ⟨0, _⟩ => Strategy.pure ⟨PrisonersDilemmaStrategies.silent⟩
+                          | ⟨1, _⟩ => Strategy.pure ⟨PrisonersDilemmaStrategies.confess⟩
+  }
+
+def PrisonersDilemmaConfessConfessProfile : StrategyProfile PL :=
+  { strategies := λ i => match i with
+                          | ⟨0, _⟩ => Strategy.pure ⟨PrisonersDilemmaStrategies.confess⟩
+                          | ⟨1, _⟩ => Strategy.pure ⟨PrisonersDilemmaStrategies.confess⟩
   }
 
 def PrisonersDilemmaGame : Game PL 2 :=
-  { utility := PrisonersDilemmaUtilityFunction,
-    same_length := rfl,
-    at_least_one_player := Nat.zero_lt_succ 1
-  }
+{ utility := PrisonersDilemmaUtilityFunction,
+  same_length := rfl,
+  at_least_one_player := Nat.zero_lt_succ 1
+  pure_strategy_profile := by exact PrisonersDilemmaPureProfile
+}
 ```
 
 This formalization defines the type `PrisonersDilemmaStrategies` to be the type of strategies for the Prisoner's Dilemma, and defines the list `PL` to be the Strategy to Player mapping. It then defines the utility function for the Prisoner's Dilemma by matching on the strategies of the two players and returning the appropriate utility profile. Finally, it defines the Prisoner's Dilemma game as a game with the Prisoner's Dilemma utility function, 2 players, and a proof that there is at least one player.
+
+You can then prove that (silent, silent) is not a nash equilibrium as follows:
+```lean
+theorem PDSilentConfessIsUnilateralOfPDSilentSilent : UnilateralChange PL PrisonersDilemmaSilentConfessProfile PrisonersDilemmaSilentSilentProfile (Fin.mk 1 x)
+  := by unfold UnilateralChange
+        intro i
+        cases i
+        case mk val isLt =>
+          cases val
+          case zero => left
+                       unfold PrisonersDilemmaSilentSilentProfile
+                       unfold PrisonersDilemmaSilentConfessProfile
+                       simp_all
+          case succ n =>
+            cases n
+            case zero => right
+                         simp_all
+            case succ m => rw [PL_length] at isLt
+                           conv at isLt => lhs
+                                           change m + 2
+                                           rw [add_comm]
+                           simp_all only [add_zero, add_lt_iff_neg_left, not_lt_zero']
+
+theorem NotNashEquilibriumSilentSilent : ¬ NashEquilibrium PL 2 PrisonersDilemmaGame PrisonersDilemmaSilentSilentProfile
+  := by apply not_nasheq_if_uc_better
+        case i =>
+          rw [PL_length]
+          exact Fin.last 1
+        case a =>
+          constructor
+          case left => exact PDSilentConfessIsUnilateralOfPDSilentSilent
+          case right => unfold PL PrisonersDilemmaGame PrisonersDilemmaSilentSilentProfile
+                          PrisonersDilemmaSilentConfessProfile PrisonersDilemmaPureProfile PrisonersDilemmaUtilityFunction
+                          DoesAtLeastAsWellAs PlayGame UtilityFunction.apply eval_sp
+                        simp_all [↓dreduceDIte]
+                        unfold eval_sp
+                        simp_all [↓reduceDIte]
+                        rfl
+```
+
+The second theorem here is the important one, actually showing that (silent, silent) is not a nash equilibrium. The proof operates by applying a theorem stating that, if any unilateral change (a profile with only a single player changing) performs better than the given strategy, it's not a nash equilibrium. Then we just have to show that we have a unilateral change and that that unilateral change performs better than (silent, silent). For the purposes of this proof, I chose to show that (silent, confess) is this unilateral change. 
+
+The case a.left is where we show that (silent, confess) is a unilateral change of (silent, silent), and we delegate that to the first theorem, which essentially shows that fact by manual brute force. The case a.right is where we show (silent, confess) is better for the second player than (silent, silent), which is shown by unwrapping all of our definitions and reducing to the actual inequality that they represent: 3 < 4.
 
 ## Example: Rock, Paper, Scissors
 
