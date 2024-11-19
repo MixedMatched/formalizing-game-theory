@@ -227,29 +227,25 @@ def UtilityFunction.apply : UtilityFunction L → L.length > 0 → PureStrategyP
 
 -- a Game is a number of players, a list of strategies for each player, and a utility function
 @[aesop safe [constructors, cases]]
-structure Game (L: List Type) (N: Nat) where
+structure Game (L: List Type) where
   (utility: UtilityFunction L)
-  (same_length: (List.length L) = N)
-  (at_least_one_player: N > 0)
+  (at_least_one_player: List.length L > 0)
   (pure_strategy_profile: PureStrategyProfile L)
 
-def Game.strategy_profile : Game L N → StrategyProfile L := by
+def Game.strategy_profile : Game L → StrategyProfile L := by
   intro g
   have psp : PureStrategyProfile L := by exact g.pure_strategy_profile
   let sp : StrategyProfile L := ⟨λ i => Strategy.pure (psp.strategies i)⟩
   exact sp
 
-def PlayPureGame (L: List Type) (N: Nat) (G: Game L N) (PS: PureStrategyProfile L) : UtilityProfile L :=
+def PlayPureGame (L: List Type) (G: Game L) (PS: PureStrategyProfile L) : UtilityProfile L :=
   G.utility.pure_apply PS
 
 -- a PlayGame is a function that takes a Game, a StrategyProfile, and returns a list of Utilities
 @[aesop norm unfold]
-def PlayGame (L: List Type) (N: Nat) (G: Game L N) (S: StrategyProfile L) : UtilityProfile L :=
+def PlayGame (L: List Type) (G: Game L) (S: StrategyProfile L) : UtilityProfile L :=
   G.utility.apply
-    (by simp_all only [gt_iff_lt]
-        obtain ⟨_, same_length, at_least_one_player, _⟩ := G
-        subst same_length
-        simp_all only [gt_iff_lt])
+    G.at_least_one_player
     (by exact G.pure_strategy_profile)
     S
 
@@ -267,18 +263,18 @@ def UnilateralChange (L: List Type) (A B: StrategyProfile L) (delta: Fin (List.l
 
 -- S does at least as well as S' does at delta
 @[aesop norm unfold]
-def DoesAtLeastAsWellAs (L: List Type) (N: Nat) (G: Game L N) (S S': StrategyProfile L) (delta: Fin (List.length L)) : Prop :=
-  let thisUtilities: UtilityProfile L := (PlayGame L N G S)
-  let otherUtilities: UtilityProfile L := (PlayGame L N G S')
+def DoesAtLeastAsWellAs (L: List Type) (G: Game L) (S S': StrategyProfile L) (delta: Fin (List.length L)) : Prop :=
+  let thisUtilities: UtilityProfile L := (PlayGame L G S)
+  let otherUtilities: UtilityProfile L := (PlayGame L G S')
   otherUtilities.utilities.get (Fin.cast otherUtilities.same_length delta) ≤ thisUtilities.utilities.get (Fin.cast thisUtilities.same_length delta)
 
 -- A StrategyProfile fulfills NashEquilibrium when no player can increase their utility by unilaterally changing their strategy
 @[aesop norm unfold]
-def NashEquilibrium (L: List Type) (N: Nat) (G: Game L N) (S: StrategyProfile L) : Prop :=
+def NashEquilibrium (L: List Type) (G: Game L) (S: StrategyProfile L) : Prop :=
   -- for every StrategyProfile and delta, if it's a UnilateralChange, S must outperform S' for delta
   ∀ (S': StrategyProfile L)
     (delta: Fin (List.length L)),
-    UnilateralChange L S S' delta → DoesAtLeastAsWellAs L N G S S' delta
+    UnilateralChange L S S' delta → DoesAtLeastAsWellAs L G S S' delta
 
 @[simp]
 theorem nchange_comm: ∀ (S': StrategyProfile L) (_: NChange L S S' deltas), NChange L S' S deltas := by
@@ -424,18 +420,18 @@ theorem eventually_uc:
       := by sorry
 
 @[simp]
-theorem dalawa_inv: ¬DoesAtLeastAsWellAs L N G S S' delta → DoesAtLeastAsWellAs L N G S' S delta := by
+theorem dalawa_inv: ¬DoesAtLeastAsWellAs L G S S' delta → DoesAtLeastAsWellAs L G S' S delta := by
   intro not_dalawa
   unfold DoesAtLeastAsWellAs at not_dalawa ⊢
   simp_all only [List.get_eq_getElem, Fin.coe_cast, not_le]
   exact le_of_lt not_dalawa
 
 @[simp]
-theorem dalawa_self: DoesAtLeastAsWellAs L N G S S delta := by
+theorem dalawa_self: DoesAtLeastAsWellAs L G S S delta := by
   unfold DoesAtLeastAsWellAs
   simp_all only [List.get_eq_getElem, Fin.coe_cast, le_refl]
 
-theorem dalawa_trans: DoesAtLeastAsWellAs L N G S S' delta → DoesAtLeastAsWellAs L N G S' S'' delta → DoesAtLeastAsWellAs L N G S S'' delta := by
+theorem dalawa_trans: DoesAtLeastAsWellAs L G S S' delta → DoesAtLeastAsWellAs L G S' S'' delta → DoesAtLeastAsWellAs L G S S'' delta := by
   unfold DoesAtLeastAsWellAs
   intro ss' s's''
   unfold PlayGame at ss' s's'' ⊢
@@ -451,19 +447,19 @@ theorem dalawa_trans: DoesAtLeastAsWellAs L N G S S' delta → DoesAtLeastAsWell
       ss' -/
 
 @[simp]
-theorem nasheq_exists: NashEquilibrium L N G S
+theorem nasheq_exists: NashEquilibrium L G S
   := by sorry -- we need to use a fixed point theorem here :p
 
 @[simp]
-theorem not_nasheq_if_uc_better: UnilateralChange L A B i ∧ ¬DoesAtLeastAsWellAs L N G B A i → ¬NashEquilibrium L N G B := by
+theorem not_nasheq_if_uc_better: UnilateralChange L A B i ∧ ¬DoesAtLeastAsWellAs L G B A i → ¬NashEquilibrium L G B := by
   intro h ne
   unfold NashEquilibrium at ne
   have uc: UnilateralChange L B A i := by apply And.left at h
                                           apply uc_comm at h
                                           exact h
   apply ne at uc
-  let au: UtilityProfile L := (PlayGame L N G A)
-  let bu: UtilityProfile L := (PlayGame L N G B)
+  let au: UtilityProfile L := (PlayGame L G A)
+  let bu: UtilityProfile L := (PlayGame L G B)
   have greater: au.utilities.get (Fin.cast au.same_length i) > bu.utilities.get (Fin.cast bu.same_length i)
     := by apply And.right at h
           unfold DoesAtLeastAsWellAs at h
@@ -472,7 +468,7 @@ theorem not_nasheq_if_uc_better: UnilateralChange L A B i ∧ ¬DoesAtLeastAsWel
   tauto
 
 @[simp]
-theorem exists_better_uc_if_not_nasheq: ¬NashEquilibrium L N G S → (∃ (S': StrategyProfile L) (delta: Fin (List.length L)), UnilateralChange L S S' delta ∧ DoesAtLeastAsWellAs L N G S' S delta) := by
+theorem exists_better_uc_if_not_nasheq: ¬NashEquilibrium L G S → (∃ (S': StrategyProfile L) (delta: Fin (List.length L)), UnilateralChange L S S' delta ∧ DoesAtLeastAsWellAs L G S' S delta) := by
   intro not_ne
   unfold NashEquilibrium at not_ne
   simp_all
@@ -484,7 +480,7 @@ theorem exists_better_uc_if_not_nasheq: ¬NashEquilibrium L N G S → (∃ (S': 
   use delta
 
 @[simp]
-theorem better_than_all_ucs_is_nasheq: (∀ (S': StrategyProfile L) (delta: Fin (List.length L)), UnilateralChange L S S' delta → DoesAtLeastAsWellAs L N G S S' delta) → NashEquilibrium L N G S := by
+theorem better_than_all_ucs_is_nasheq: (∀ (S': StrategyProfile L) (delta: Fin (List.length L)), UnilateralChange L S S' delta → DoesAtLeastAsWellAs L G S S' delta) → NashEquilibrium L G S := by
   intro as'delta
   unfold NashEquilibrium
   intro S' delta uc
@@ -492,9 +488,9 @@ theorem better_than_all_ucs_is_nasheq: (∀ (S': StrategyProfile L) (delta: Fin 
   exact uc
 
 @[simp]
-theorem all_ucs_not_nash_eq_then_nash_eq: (∀ (S': StrategyProfile L) (delta: Fin (List.length L)), UnilateralChange L S S' delta → ¬NashEquilibrium L N G S') → NashEquilibrium L N G S := by
+theorem all_ucs_not_nash_eq_then_nash_eq: (∀ (S': StrategyProfile L) (delta: Fin (List.length L)), UnilateralChange L S S' delta → ¬NashEquilibrium L G S') → NashEquilibrium L G S := by
   have Sne : StrategyProfile L := G.strategy_profile
-  have nes' : NashEquilibrium L N G Sne
+  have nes' : NashEquilibrium L G Sne
     := by exact nasheq_exists
   intro as'delta S' delta uc
   by_cases S_is_ne : Sne = S
@@ -573,9 +569,8 @@ def PrisonersDilemmaConfessConfessProfile : StrategyProfile PL :=
   }
 
 @[aesop norm unfold]
-def PrisonersDilemmaGame : Game PL 2 :=
+def PrisonersDilemmaGame : Game PL :=
 { utility := PrisonersDilemmaUtilityFunction,
-  same_length := rfl,
   at_least_one_player := Nat.zero_lt_succ 1
   pure_strategy_profile := by exact PrisonersDilemmaPureProfile
 }
@@ -600,7 +595,7 @@ theorem PDSilentConfessIsUnilateralOfPDSilentSilent : UnilateralChange PL Prison
                                       rw [add_comm]
                       simp_all only [add_zero, add_lt_iff_neg_left, not_lt_zero']
 
-theorem NotNashEquilibriumSilentSilent : ¬ NashEquilibrium PL 2 PrisonersDilemmaGame PrisonersDilemmaSilentSilentProfile := by
+theorem NotNashEquilibriumSilentSilent : ¬ NashEquilibrium PL PrisonersDilemmaGame PrisonersDilemmaSilentSilentProfile := by
   apply not_nasheq_if_uc_better
   case i =>
     rw [PL_length]
@@ -616,7 +611,7 @@ theorem NotNashEquilibriumSilentSilent : ¬ NashEquilibrium PL 2 PrisonersDilemm
                   simp_all [↓reduceDIte]
                   rfl
 
-theorem ConfessConfessDALAWAMixedOne : ∀ m: MixedStrategy PrisonersDilemmaStrategies, DoesAtLeastAsWellAs PL 2 PrisonersDilemmaGame
+theorem ConfessConfessDALAWAMixedOne : ∀ m: MixedStrategy PrisonersDilemmaStrategies, DoesAtLeastAsWellAs PL PrisonersDilemmaGame
                                                                 PrisonersDilemmaConfessConfessProfile
                                                                 ⟨λ i => match i with
                                                                         | ⟨0, _⟩ => Strategy.mixed m
@@ -633,7 +628,7 @@ theorem ConfessConfessDALAWAMixedOne : ∀ m: MixedStrategy PrisonersDilemmaStra
     Fin.val_one, Fin.cast_zero]
   sorry
 
-theorem NashEquilibriumConfessConfess : NashEquilibrium PL 2 PrisonersDilemmaGame PrisonersDilemmaConfessConfessProfile := by
+theorem NashEquilibriumConfessConfess : NashEquilibrium PL PrisonersDilemmaGame PrisonersDilemmaConfessConfessProfile := by
   apply better_than_all_ucs_is_nasheq
   unfold PL PrisonersDilemmaGame PrisonersDilemmaPureProfile PrisonersDilemmaUtilityFunction PrisonersDilemmaConfessConfessProfile
     DoesAtLeastAsWellAs PlayGame UtilityFunction.apply eval_sp
@@ -675,9 +670,8 @@ def RPSPureProfile : PureStrategyProfile RPS :=
                           | ⟨1, _⟩ => ⟨RockPaperScissorsStrategies.scissors⟩
   }
 
-def RockPaperScissorsGame : Game RPS 2 :=
+def RockPaperScissorsGame : Game RPS :=
   { utility := RockPaperScissorsUtilityFunction,
-    same_length := rfl,
     at_least_one_player := Nat.zero_lt_succ 1
     pure_strategy_profile := by exact RPSPureProfile
   }
@@ -713,9 +707,8 @@ def NDC_Pure : PureStrategyProfile NashDemandChoiceList :=
                           ⟩
   }
 
-def NashDemandGame : Game NashDemandChoiceList 2 :=
+def NashDemandGame : Game NashDemandChoiceList :=
   { utility := NashDemandUtilityFunction,
-    same_length := rfl,
     at_least_one_player := Nat.zero_lt_succ 1
     pure_strategy_profile := by exact NDC_Pure
   }
@@ -752,9 +745,8 @@ def AlwaysConfess : PureStrategyProfile IPDList :=
                           | ⟨1, _⟩ => ⟨⟨λ _ => PrisonersDilemmaStrategies.confess⟩⟩
   }
 
-def IPDGame : Game IPDList 2 :=
+def IPDGame : Game IPDList :=
   { utility := IPD_UtilityFunction
-    same_length := rfl
     at_least_one_player := Nat.zero_lt_succ 1
     pure_strategy_profile := by exact AlwaysConfess
   }
