@@ -745,3 +745,16 @@ def IPD_UtilityRecurse (psp: PureStrategyProfile IPDList) (p1_list: List Prisone
 
 def IPD_UtilityFunction : UtilityFunction IPDList :=
   ⟨λ S => IPD_UtilityRecurse S [] [] 5⟩
+
+def AlwaysConfess : PureStrategyProfile IPDList :=
+  { strategies := λ i => match i with
+                          | ⟨0, _⟩ => ⟨⟨λ _ => PrisonersDilemmaStrategies.confess⟩⟩
+                          | ⟨1, _⟩ => ⟨⟨λ _ => PrisonersDilemmaStrategies.confess⟩⟩
+  }
+
+def IPDGame : Game IPDList 2 :=
+  { utility := IPD_UtilityFunction
+    same_length := rfl
+    at_least_one_player := Nat.zero_lt_succ 1
+    pure_strategy_profile := by exact AlwaysConfess
+  }
