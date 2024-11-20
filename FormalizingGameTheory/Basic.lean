@@ -572,6 +572,7 @@ theorem all_ucs_not_nash_eq_then_nash_eq: (∀ (S': StrategyProfile L) (delta: F
 inductive PrisonersDilemmaStrategies where
 | silent
 | confess
+deriving BEq
 
 @[aesop norm unfold]
 def PL : List Type := [PrisonersDilemmaStrategies, PrisonersDilemmaStrategies]
@@ -715,13 +716,15 @@ def RockPaperScissorsUtilityFunction : UtilityFunction RPS :=
   ⟩
 
 def RPSPureProfile : PureStrategyProfile RPS :=
-  { strategies := λ i => match i with
+  {
+    strategies := λ i => match i with
                           | ⟨0, _⟩ => ⟨RockPaperScissorsStrategies.paper⟩
                           | ⟨1, _⟩ => ⟨RockPaperScissorsStrategies.scissors⟩
   }
 
 def RockPaperScissorsGame : Game RPS :=
-  { utility := RockPaperScissorsUtilityFunction,
+  {
+    utility := RockPaperScissorsUtilityFunction,
     at_least_one_player := Nat.zero_lt_succ 1
     pure_strategy_profile := by exact RPSPureProfile
   }
@@ -739,26 +742,32 @@ structure NashDemandChoice where
 def NashDemandChoiceList : List Type := [NashDemandChoice, NashDemandChoice]
 
 def NashDemandUtilityFunction : UtilityFunction NashDemandChoiceList :=
-  ⟨λ S => match S.strategies (Fin.ofNat 0), S.strategies (Fin.ofNat 1) with
-          | ⟨d1, _, _⟩, ⟨d2, _, _⟩ =>
-            let d12 : Rat := d1 + d2
-            let oneUtility : Rat := 1
-              if d12 ≤ oneUtility then { utilities := [d1, d2], same_length := rfl }
-            else { utilities := [0, 0], same_length := rfl }
+  ⟨
+    λ S =>
+      match S.strategies (Fin.ofNat 0), S.strategies (Fin.ofNat 1) with
+      | ⟨d1, _, _⟩, ⟨d2, _, _⟩ =>
+        let d12 : Rat := d1 + d2
+        let oneUtility : Rat := 1
+          if d12 ≤ oneUtility then { utilities := [d1, d2], same_length := rfl }
+        else { utilities := [0, 0], same_length := rfl }
   ⟩
 
 def NDC_Pure : PureStrategyProfile NashDemandChoiceList :=
-  { strategies := λ i => match i with
-                          | ⟨0, _⟩ => ⟨
-                            ⟨1, by exact rfl, by exact Preorder.le_refl 1 ⟩
-                          ⟩
-                          | ⟨1, _⟩ => ⟨
-                            ⟨1, by exact rfl, by exact Preorder.le_refl 1 ⟩
-                          ⟩
+  {
+    strategies :=
+      λ i =>
+        match i with
+        | ⟨0, _⟩ => ⟨
+          ⟨1, by exact rfl, by exact Preorder.le_refl 1 ⟩
+        ⟩
+        | ⟨1, _⟩ => ⟨
+          ⟨1, by exact rfl, by exact Preorder.le_refl 1 ⟩
+        ⟩
   }
 
 def NashDemandGame : Game NashDemandChoiceList :=
-  { utility := NashDemandUtilityFunction,
+  {
+    utility := NashDemandUtilityFunction,
     at_least_one_player := Nat.zero_lt_succ 1
     pure_strategy_profile := by exact NDC_Pure
   }
@@ -766,7 +775,7 @@ def NashDemandGame : Game NashDemandChoiceList :=
 -- Example: Iterated Prisoner's Dilemma for 5 rounds
 
 structure IPD_Strategy where
-  (strategy_function: List PrisonersDilemmaStrategies → PrisonersDilemmaStrategies)
+  (strategy_function: List PrisonersDilemmaStrategies → List PrisonersDilemmaStrategies → PrisonersDilemmaStrategies)
 
 def IPDList : List Type := [IPD_Strategy, IPD_Strategy]
 
@@ -774,8 +783,8 @@ def IPD_UtilityRecurse (psp: PureStrategyProfile IPDList) (p1_list: List Prisone
   by_cases iter = 0
   case pos => exact zero_utility_profile IPDList
   case neg =>
-    let p1_choice : PrisonersDilemmaStrategies := (psp.strategies (Fin.ofNat 0)).val.strategy_function p1_list
-    let p2_choice : PrisonersDilemmaStrategies := (psp.strategies (Fin.ofNat 1)).val.strategy_function p2_list
+    let p1_choice : PrisonersDilemmaStrategies := (psp.strategies (Fin.ofNat 0)).val.strategy_function p1_list p2_list
+    let p2_choice : PrisonersDilemmaStrategies := (psp.strategies (Fin.ofNat 1)).val.strategy_function p2_list p1_list
     let current_round_utilities :=
       PrisonersDilemmaUtilityFunction.pure_apply
         ⟨λ i => match i with
@@ -793,13 +802,24 @@ def IPD_UtilityFunction : UtilityFunction IPDList :=
   ⟨λ S => IPD_UtilityRecurse S [] [] 5⟩
 
 def AlwaysConfess : PureStrategyProfile IPDList :=
-  { strategies := λ i => match i with
-                          | ⟨0, _⟩ => ⟨⟨λ _ => PrisonersDilemmaStrategies.confess⟩⟩
-                          | ⟨1, _⟩ => ⟨⟨λ _ => PrisonersDilemmaStrategies.confess⟩⟩
+  {
+    strategies := λ i => match i with
+                          | ⟨0, _⟩ => ⟨⟨λ _ _ => PrisonersDilemmaStrategies.confess⟩⟩
+                          | ⟨1, _⟩ => ⟨⟨λ _ _ => PrisonersDilemmaStrategies.confess⟩⟩
   }
 
+def TitForTat : IPD_Strategy :=
+  ⟨
+    λ _ other =>
+      if (other.contains PrisonersDilemmaStrategies.confess) then
+        PrisonersDilemmaStrategies.confess
+      else
+        PrisonersDilemmaStrategies.silent
+  ⟩
+
 def IPDGame : Game IPDList :=
-  { utility := IPD_UtilityFunction
+  {
+    utility := IPD_UtilityFunction
     at_least_one_player := Nat.zero_lt_succ 1
     pure_strategy_profile := by exact AlwaysConfess
   }
