@@ -34,6 +34,26 @@ def PureStrategy.asMixed : PureStrategy A → MixedStrategy A :=
       same_length := by simp_all only [List.length_singleton]
     }
 
+def MixedStrategy.isPure : MixedStrategy A → Prop :=
+  λ m => m.strategies.length = 1
+
+def MixedStrategy.asPure : (m: MixedStrategy A) → m.isPure → PureStrategy A :=
+  λ m pure => m.strategies[0]'(by exact Nat.lt_of_sub_eq_succ pure)
+
+def MixedStrategy.length_not_zero : (m: MixedStrategy A) → m.strategies.length ≠ 0 := by
+  intro m
+  simp_all only [ne_eq, List.length_eq_zero]
+  apply Aesop.BuiltinRules.not_intro
+  intro a
+  obtain ⟨strategies, probabilities, probabilities_sum_to_one, probabilities_non_negative, same_length⟩ := m
+  subst a
+  simp_all only [gt_iff_lt, List.all_eq_true, decide_eq_true_eq, List.length_nil]
+  cases probabilities
+  . unfold List.foldl at probabilities_sum_to_one
+    trivial
+  . simp_all only [List.foldl_cons, List.mem_cons, forall_eq_or_imp, List.length_cons, self_eq_add_left,
+    AddLeftCancelMonoid.add_eq_zero, List.length_eq_zero, one_ne_zero, and_false]
+
 -- a PureStrategyProfile is a list of PureStrategy (for type reasons, we need to use a function)
 @[aesop safe [constructors, cases]]
 structure PureStrategyProfile (L: List Type) where
@@ -43,6 +63,12 @@ structure PureStrategyProfile (L: List Type) where
 @[aesop safe [constructors, cases]]
 structure MixedStrategyProfile (L: List Type) where
   (strategies: (i: Fin (List.length L)) → MixedStrategy (List.get L i))
+
+def MixedStrategyProfile.isPure : MixedStrategyProfile L → Prop :=
+  λ msp => ∀ (i: Fin (List.length L)), (msp.strategies i).isPure
+
+def MixedStrategyProfile.asPure : (msp: MixedStrategyProfile L) → msp.isPure → PureStrategyProfile L :=
+  λ msp pure => ⟨λ i => (msp.strategies i).asPure (pure i)⟩
 
 -- a UtilityProfile is a list of utilities
 @[aesop safe [constructors, cases]]
@@ -487,6 +513,10 @@ def Game.play : Game L → MixedStrategyProfile L → UtilityProfile L :=
               (by exact g.pure_strategy_profile)
               sp
 
+def Game.play_of_pure_eq_pure_play (G: Game L) : (msp: MixedStrategyProfile L) → (pure: msp.isPure) → (G.play msp = G.pure_play (msp.asPure pure)) := by
+  intro msp pure
+  sorry
+
 -- two strategy profiles are NChange with a list of deltas if those profiles are only possibly
 -- different at those deltas
 @[aesop norm unfold]
@@ -527,6 +557,10 @@ def StrictNashEquilibrium (L: List Type) (G: Game L) (S: MixedStrategyProfile L)
   ∀ (S': MixedStrategyProfile L)
     (delta: Fin (List.length L)),
     UnilateralChange L S S' delta → DoesBetterThan L G S S' delta
+
+def GameSymmetric (L: List Type) : Prop := L.Chain' (λ a b => a = b)
+
+def GameFinite (L: List Type) : Prop := L.Forall (λ t => Finite t)
 
 @[simp]
 theorem nchange_comm: ∀ (S': MixedStrategyProfile L) (_: NChange L S S' deltas), NChange L S' S deltas := by
@@ -662,7 +696,7 @@ theorem dbt_trans: DoesBetterThan L G S S' delta → DoesBetterThan L G S' S'' d
   exact gt_trans ss' s's''
 
 @[simp]
-theorem nasheq_exists: ∃ (S: MixedStrategyProfile L), NashEquilibrium L G S
+theorem finite_nasheq_exists: GameFinite L → ∃ (S: MixedStrategyProfile L), NashEquilibrium L G S
   := by sorry -- we need to use a fixed point theorem here :p
 
 @[simp]
@@ -830,18 +864,36 @@ theorem NotNashEquilibriumSilentSilent : ¬ NashEquilibrium PL PrisonersDilemmaG
                   simp_all only [List.getElem_cons_succ, List.getElem_cons_zero]
                   rfl
 
+theorem ConfessConfessDALAWAChangedOne :
+    ∀ m: MixedStrategy PrisonersDilemmaStrategies,
+      DoesAtLeastAsWellAs PL PrisonersDilemmaGame
+        PrisonersDilemmaConfessConfessProfile
+        ⟨λ i => match i with
+                | ⟨0, _⟩ => m
+                | ⟨1, _⟩ => PureStrategy.asMixed ⟨PrisonersDilemmaStrategies.confess⟩⟩
+        ⟨0, by unfold PL; simp_all⟩
+        := by
+  sorry
+
+theorem ConfessConfessDALAWAChangedTwo :
+    ∀ m: MixedStrategy PrisonersDilemmaStrategies,
+      DoesAtLeastAsWellAs PL PrisonersDilemmaGame
+        ⟨λ i => match i with
+                | ⟨0, _⟩ => m
+                | ⟨1, _⟩ => PureStrategy.asMixed ⟨PrisonersDilemmaStrategies.confess⟩⟩
+        PrisonersDilemmaConfessConfessProfile
+        ⟨1, by unfold PL; simp_all⟩
+        := by
+  sorry
+
 theorem NashEquilibriumConfessConfess : NashEquilibrium PL PrisonersDilemmaGame PrisonersDilemmaConfessConfessProfile := by
   apply better_than_all_ucs_is_nasheq
-  unfold PL PrisonersDilemmaGame PrisonersDilemmaPureProfile PrisonersDilemmaUtilityFunction PrisonersDilemmaConfessConfessProfile
-    DoesAtLeastAsWellAs Game.play UtilityFunction.apply eval_sp
-  intro sp delta uc
-  intro thisUtilities otherUtilities
-  unfold UnilateralChange at uc
-  unfold NChange at uc
-  simp_all [↓dreduceDIte, otherUtilities, thisUtilities]
-  obtain ⟨strategies⟩ := sp
-  simp_all only [Fin.isValue]
-  sorry
+  intro S' delta uc
+  have i : Fin PL.length := ⟨0, by simp [PL_length]⟩
+  specialize uc i
+  match i with
+  | ⟨0, _⟩ => sorry
+  | ⟨1, _⟩ => sorry
 
 -- Example: Rock-Paper-Scissors
 
