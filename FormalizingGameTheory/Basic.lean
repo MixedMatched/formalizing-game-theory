@@ -8,116 +8,74 @@ import Aesop
 @[aesop safe [constructors, cases]]
 structure PureStrategy (A : Type) := (val : A)
 
-def PureStrategy.cast : PureStrategy A → A = M → PureStrategy M
-  := by intro PS_A A_eq_M
-        subst A_eq_M
-        exact PS_A
+def PureStrategy.cast : PureStrategy A → A = M → PureStrategy M := by
+  intro PS_A A_eq_M
+  subst A_eq_M
+  exact PS_A
 
 -- a MixedStrategy is a probability distribution over PureStrategies
 @[aesop safe [constructors, cases]]
 structure MixedStrategy (A : Type) :=
   (strategies: List (PureStrategy A))
   (probabilities: List Rat)
-  (probabilities_sum_to_one: List.foldl (a + b) 0 probabilities = 1)
+  (probabilities_sum_to_one: List.foldl Rat.add 0 probabilities = 1)
   (probabilities_non_negative: List.all probabilities (λ p => p > 0))
   (same_length: List.length strategies = List.length probabilities)
 
--- a Strategy is either a PureStrategy or a MixedStrategy
-@[aesop safe [constructors, cases]]
-inductive Strategy (A : Type) where
-| pure : PureStrategy A → Strategy A
-| mixed : MixedStrategy A → Strategy A
+def PureStrategy.asMixed : PureStrategy A → MixedStrategy A :=
+  λ ps =>
+    {
+      strategies := [ps]
+      probabilities := [1]
+      probabilities_sum_to_one := by
+        simp_all only [List.foldl_cons, List.foldl_nil, Rat.add, Rat.den_ofNat, Nat.gcd_self, ↓reduceDIte, Rat.num_ofNat, Nat.cast_one,
+          mul_one, zero_add, Rat.mk_den_one, Int.cast_one]
+      probabilities_non_negative := by simp_all only [gt_iff_lt, List.all_cons, zero_lt_one, decide_True, List.all_nil, Bool.and_self]
+      same_length := by simp_all only [List.length_singleton]
+    }
 
-@[aesop norm unfold]
-def Strategy.isPure : Strategy A → Prop
-  | pure _ => True
-  | mixed _ => False
-
-@[aesop norm unfold]
-def Strategy.intoPure : (s: Strategy A) → s.isPure → PureStrategy A
-  | pure p => (λ _ => p)
-  | mixed m => by intro a
-                  unfold Strategy.isPure at a
-                  tauto
-
-def Strategy.downcast : (s: Strategy A) → (ip: s.isPure) → s = Strategy.pure (s.intoPure ip) := by
-  intro s ip
-  unfold Strategy.intoPure
-  unfold Strategy.isPure at ip
-  cases s with
-  | pure a => simp_all only
-  | mixed a_1 =>
-    simp_all only [reduceCtorEq]
-    tauto
-
-def pure_as_general_eq {p: PureStrategy A} {s: Strategy A} : (ip: s.isPure) → (s.intoPure ip = p) ↔ (s = Strategy.pure p) := by
-  intro ip
-  constructor
-  case mp =>
-    intro into
-    subst into
-    unfold Strategy.intoPure
-    unfold Strategy.isPure at ip
-    cases s with
-    | pure a => simp_all only
-    | mixed a_1 =>
-      simp_all only [reduceCtorEq]
-      simp_all only
-  case mpr =>
-    intro as_strat
-    subst as_strat
-    unfold Strategy.intoPure
-    unfold Strategy.isPure at ip
-    simp_all only
-
+-- a PureStrategyProfile is a list of PureStrategy (for type reasons, we need to use a function)
 @[aesop safe [constructors, cases]]
 structure PureStrategyProfile (L: List Type) where
   (strategies: (i: Fin (List.length L)) → PureStrategy (List.get L i))
 
--- a StrategyProfile is a list of strategies (for type reasons, we need to use a function)
+-- a MixedStrategyProfile is a list of MixedStrategy (for type reasons, we need to use a function)
 @[aesop safe [constructors, cases]]
-structure StrategyProfile (L: List Type) where
-  (strategies: (i: Fin (List.length L)) → Strategy (List.get L i))
-
-@[aesop norm unfold]
-def PureStrategyProfile.raiseToStrategyProfile : PureStrategyProfile L → StrategyProfile L :=
-  λ psp => ⟨λ i => Strategy.pure (psp.strategies i)⟩
-
-def StrategyProfile.isPure : StrategyProfile L → Prop :=
-  λ sp => (∀ (i: Fin L.length), (sp.strategies i).isPure)
-
-@[aesop norm unfold]
-def StrategyProfile.lowerToPure : (sp: StrategyProfile L) → sp.isPure → PureStrategyProfile L := by
-  intro sp ip
-  cases sp
-  case mk strategies =>
-    apply PureStrategyProfile.mk
-    case strategies =>
-      intro i
-      specialize ip i
-      unfold Strategy.isPure at ip
-      split at ip
-      case h_1 a _ => exact a
-      case h_2 _ _ => tauto
+structure MixedStrategyProfile (L: List Type) where
+  (strategies: (i: Fin (List.length L)) → MixedStrategy (List.get L i))
 
 -- a UtilityProfile is a list of utilities
 @[aesop safe [constructors, cases]]
 structure UtilityProfile (L: List Type) where
   (utilities: List Rat)
   (same_length: L.length = utilities.length)
+deriving BEq, DecidableEq
 
 def UtilityProfile.cast : UtilityProfile A → A.length = B.length → UtilityProfile B := by
   intro upa a_eq_b
   exact ⟨upa.utilities, by obtain ⟨utilities, same_length⟩ := upa; simp_all only⟩
 
+theorem Fin_can_index_utilities (i: Fin L.length) (up: UtilityProfile L) : ↑i < up.utilities.length := by
+  obtain ⟨utilities, same_length⟩ := up
+  simp_all only
+  let i_isLt := i.isLt
+  simp only [same_length] at i_isLt
+  exact i_isLt
+
+theorem Nat_can_index_utilities (i: Nat) (up: UtilityProfile L) (i_isLt: i < L.length) : i < up.utilities.length := by
+  obtain ⟨utilities, same_length⟩ := up
+  simp_all only
+
+@[aesop safe unfold]
 instance UtilityProfile.add : Add (UtilityProfile L) where
   add x y := by
-    let utilities : List Rat := List.map
-      (λ uu => uu.fst + uu.snd)
-      (List.zip x.utilities y.utilities)
+    let utilities : List Rat := List.zipWith
+      Rat.add
+      x.utilities
+      y.utilities
     let same_length : L.length = utilities.length := by
       unfold utilities
-      simp_all only [List.length_map, List.length_zip]
+      simp_all only [List.length_zipWith]
       obtain ⟨utilities_1, same_length_1⟩ := x
       obtain ⟨utilities_2, same_length_2⟩ := y
       simp_all only
@@ -125,6 +83,283 @@ instance UtilityProfile.add : Add (UtilityProfile L) where
       simp_all only [min_self]
     let up : UtilityProfile L := ⟨utilities, same_length⟩
     exact up
+
+theorem UtilityProfile.length_add_left (a b c : UtilityProfile L) : a + b = c → a.utilities.length = c.utilities.length := by
+  intro a_1
+  subst a_1
+  unfold UtilityProfile.add HAdd.hAdd instHAdd Add.add
+  simp_all only [List.length_zipWith]
+  obtain ⟨utilities, same_length⟩ := a
+  obtain ⟨utilities_1, same_length_1⟩ := b
+  simp_all only
+  simp_all only [min_self]
+
+theorem UtilityProfile.length_add_right (a b c : UtilityProfile L) : a + b = c → b.utilities.length = c.utilities.length := by
+  intro a_1
+  subst a_1
+  unfold UtilityProfile.add HAdd.hAdd instHAdd Add.add
+  simp_all only [List.length_zipWith]
+  obtain ⟨utilities, same_length⟩ := a
+  obtain ⟨utilities_1, same_length_1⟩ := b
+  simp_all only
+  simp_all only [min_self]
+
+theorem list_zipWith_left_intro (a b c : List ℚ)
+    (a_len : a.length = c.length) (b_len : b.length = c.length)
+    (cacb : List.zipWith (· + ·) c a = List.zipWith (· + ·) c b) :
+    a = b := by
+  induction c generalizing a b with
+  | nil =>
+    revert a_len b_len
+    simp_all only [List.zipWith_nil_left, List.length_nil, List.length_eq_zero, implies_true]
+  | cons c cs ih =>
+      match a, b with
+      | [], _ => simp at a_len
+      | _, [] => simp at b_len
+      | a::as, b::bs =>
+        simp only [List.length_cons, add_left_inj] at a_len b_len
+        simp only [List.zipWith_cons_cons, List.cons.injEq, add_right_inj] at cacb
+        specialize ih _ _ a_len b_len cacb.2
+        simp [cacb.1, ih]
+
+theorem UtilityProfile.add_left_intro (a b c : UtilityProfile L) (cacb: c + a = c + b) : a = b := by
+  unfold UtilityProfile.add HAdd.hAdd instHAdd Add.add at cacb
+  simp_all only [mk.injEq]
+  obtain ⟨utilities_1, same_length_1⟩ := a
+  obtain ⟨utilities_2, same_length_2⟩ := b
+  obtain ⟨utilities, same_length⟩ := c
+  simp_all only [mk.injEq]
+  simp_all only
+  symm at same_length_2
+  rw [same_length_2] at same_length_1
+  exact list_zipWith_left_intro utilities_1 utilities_2 utilities same_length_2 same_length_1 cacb
+
+theorem index_list_zipWith_left_intro (a b c : List ℚ) (i: Fin c.length)
+    (a_len : a.length = c.length) (b_len : b.length = c.length)
+    (cacb :
+      (List.zipWith (· + ·) c a)[i]'(by simp_all only [Fin.is_lt, List.length_zipWith, min_self])
+      = (List.zipWith (· + ·) c b)[i]'(by simp_all only [Fin.is_lt, List.length_zipWith, min_self])
+    ):
+    a[i] = b[i] := by
+  induction c generalizing a b with
+  | nil =>
+    revert a_len b_len
+    simp_all only [List.zipWith_nil_left, List.length_nil, List.length_eq_zero, implies_true]
+  | cons c cs _ =>
+    match a, b with
+    | [], _ => simp at a_len
+    | _, [] => simp at b_len
+    | a::as, b::bs =>
+      simp only [List.length_cons, add_left_inj] at a_len b_len
+      simp only [List.zipWith_cons_cons, List.cons.injEq, add_right_inj] at cacb
+      cases i
+      case mk val isLt =>
+        induction val
+        case zero =>
+          simp_all only [Fin.is_lt, Fin.getElem_fin, List.getElem_zipWith, add_right_inj, implies_true, imp_self,
+            lt_add_iff_pos_left, add_pos_iff, zero_lt_one, or_true, List.length_cons, Fin.zero_eta, Fin.val_zero,
+            List.getElem_cons_zero]
+        case succ n _ =>
+          simp_all only [Fin.getElem_fin, List.getElem_zipWith, add_right_inj, implies_true,
+            List.length_cons, List.getElem_cons_succ]
+
+theorem UtilityProfile.index_add_left_intro (a b c : UtilityProfile L) (i: Fin L.length)
+    (cacb:
+      (c + a).utilities[i]'(by exact Fin_can_index_utilities i (c + a))
+      = (c + b).utilities[i]'(by exact Fin_can_index_utilities i (c + b))):
+    a.utilities[i]'(by exact Fin_can_index_utilities i a)
+      = b.utilities[i]'(by exact Fin_can_index_utilities i b) := by
+  unfold UtilityProfile.add HAdd.hAdd instHAdd Add.add at cacb
+  obtain ⟨utilities_1, same_length_1⟩ := a
+  obtain ⟨utilities_2, same_length_2⟩ := b
+  obtain ⟨utilities, same_length⟩ := c
+  simp_all only
+  rw [same_length] at same_length_1 same_length_2
+  symm at same_length_1 same_length_2
+  exact index_list_zipWith_left_intro utilities_1 utilities_2 utilities (i.cast same_length) same_length_1 same_length_2 cacb
+
+theorem index_lt_list_zipWith_left_intro (a b c : List ℚ) (i: Fin c.length)
+    (a_len : a.length = c.length) (b_len : b.length = c.length)
+    (cacb :
+      (List.zipWith (· + ·) c a)[i]'(by simp_all only [Fin.is_lt, List.length_zipWith, min_self])
+      < (List.zipWith (· + ·) c b)[i]'(by simp_all only [Fin.is_lt, List.length_zipWith, min_self])
+    ):
+    a[i] < b[i] := by
+  induction c generalizing a b with
+  | nil =>
+    revert a_len b_len
+    simp_all only [List.zipWith_nil_left, List.length_nil, List.length_eq_zero, implies_true]
+  | cons c cs _ =>
+    match a, b with
+    | [], _ => simp at a_len
+    | _, [] => simp at b_len
+    | a::as, b::bs =>
+      simp only [List.length_cons, add_left_inj] at a_len b_len
+      simp only [List.zipWith_cons_cons, List.cons.injEq, add_right_inj] at cacb
+      cases i
+      case mk val isLt =>
+        induction val
+        case zero =>
+          simp_all only [Fin.getElem_fin, List.getElem_zipWith, add_lt_add_iff_left, implies_true,
+            List.length_cons, Fin.zero_eta, Fin.val_zero, List.getElem_cons_zero]
+        case succ n _ =>
+          simp_all only [Fin.getElem_fin, List.getElem_zipWith, add_lt_add_iff_left, implies_true,
+            List.length_cons, gt_iff_lt, List.getElem_cons_succ]
+
+theorem UtilityProfile.index_lt_add_left_intro (a b c : UtilityProfile L) (i: Fin L.length)
+    (cacb:
+      (c + a).utilities[i]'(by exact Fin_can_index_utilities i (c + a))
+        < (c + b).utilities[i]'(by exact Fin_can_index_utilities i (c + b))):
+    a.utilities[i]'(by exact Fin_can_index_utilities i a)
+      < b.utilities[i]'(by exact Fin_can_index_utilities i b) := by
+  unfold UtilityProfile.add HAdd.hAdd instHAdd Add.add at cacb
+  obtain ⟨utilities_1, same_length_1⟩ := a
+  obtain ⟨utilities_2, same_length_2⟩ := b
+  obtain ⟨utilities, same_length⟩ := c
+  simp_all only
+  rw [same_length] at same_length_1 same_length_2
+  symm at same_length_1 same_length_2
+  exact index_lt_list_zipWith_left_intro utilities_1 utilities_2 utilities (i.cast same_length) same_length_1 same_length_2 cacb
+
+theorem UtilityProfile.index_nat_lt_add_left_intro (a b c : UtilityProfile L) (i: Nat) (i_Lt: i < L.length)
+    (cacb:
+      (c + a).utilities[i]'(by exact Nat_can_index_utilities i (c + a) i_Lt)
+        < (c + b).utilities[i]'(by exact Nat_can_index_utilities i (c + b) i_Lt)):
+    a.utilities[i]'(by exact Nat_can_index_utilities i a i_Lt)
+      < b.utilities[i]'(by exact Nat_can_index_utilities i b i_Lt) := by
+  unfold UtilityProfile.add HAdd.hAdd instHAdd Add.add at cacb
+  obtain ⟨utilities_1, same_length_1⟩ := a
+  obtain ⟨utilities_2, same_length_2⟩ := b
+  obtain ⟨utilities, same_length⟩ := c
+  simp_all only
+  rw [same_length] at same_length_1 same_length_2 i_Lt
+  symm at same_length_1 same_length_2
+  exact index_lt_list_zipWith_left_intro utilities_1 utilities_2 utilities ⟨i, i_Lt⟩ same_length_1 same_length_2 cacb
+
+theorem list_zipWith_left_cancel (a b c : List ℚ)
+    (a_len : a.length = c.length) (b_len : b.length = c.length)
+    (a_eq_b : a = b) :
+    List.zipWith (· + ·) c a = List.zipWith (· + ·) c b := by
+  induction c generalizing a b with
+  | nil =>
+    revert a_len b_len
+    simp_all only [List.zipWith_nil_left, List.length_nil, List.length_eq_zero, implies_true]
+  | cons c cs ih =>
+      match a, b with
+      | [], _ => simp at a_len
+      | _, [] => simp at b_len
+      | a::as, b::bs =>
+        simp only [List.length_cons, add_left_inj] at a_len b_len
+        simp only [List.zipWith_cons_cons, List.cons.injEq, add_right_inj] at a_eq_b
+        specialize ih _ _ a_len b_len a_eq_b.2
+        simp [a_eq_b.1, ih]
+
+theorem UtilityProfile.add_left_cancel (a b c : UtilityProfile L) (a_eq_b: a = b) : c + a = c + b := by
+  subst a_eq_b
+  unfold UtilityProfile.add
+  simp_all only
+
+theorem index_list_zipWith_left_cancel (a b c : List ℚ) (i: Fin c.length)
+    (a_len : a.length = c.length) (b_len : b.length = c.length)
+    (a_eq_b : a[i] = b[i]):
+    (List.zipWith (· + ·) c a)[i]'(by simp_all only [Fin.is_lt, List.length_zipWith, min_self])
+      = (List.zipWith (· + ·) c b)[i]'(by simp_all only [Fin.is_lt, List.length_zipWith, min_self])
+    := by
+  induction c generalizing a b with
+  | nil =>
+    revert a_len b_len
+    simp_all only [List.zipWith_nil_left, List.length_nil, List.length_eq_zero, implies_true]
+  | cons c cs _ =>
+    match a, b with
+    | [], _ => simp at a_len
+    | _, [] => simp at b_len
+    | a::as, b::bs =>
+      simp only [List.length_cons, add_left_inj] at a_len b_len
+      simp only [List.zipWith_cons_cons, List.cons.injEq, add_right_inj]
+      cases i
+      case mk val isLt =>
+        induction val
+        case zero =>
+          simp_all only [Fin.is_lt, Fin.getElem_fin, List.getElem_zipWith, add_right_inj, implies_true, imp_self,
+            lt_add_iff_pos_left, add_pos_iff, zero_lt_one, or_true, List.length_cons, Fin.zero_eta, Fin.val_zero,
+            List.getElem_cons_zero]
+        case succ n _ =>
+          simp_all only [Fin.getElem_fin, List.getElem_zipWith, add_right_inj, implies_true,
+            List.length_cons, List.getElem_cons_succ]
+
+theorem UtilityProfile.index_add_left_cancel (a b c : UtilityProfile L) (i: Fin L.length)
+    (a_eq_b:
+      a.utilities[i]'(by exact Fin_can_index_utilities i a)
+        = b.utilities[i]'(by exact Fin_can_index_utilities i b)
+    ):
+    (c + a).utilities[i]'(by exact Fin_can_index_utilities i (c + a))
+      = (c + b).utilities[i]'(by exact Fin_can_index_utilities i (c + b)) := by
+  unfold UtilityProfile.add HAdd.hAdd instHAdd Add.add
+  obtain ⟨utilities_1, same_length_1⟩ := a
+  obtain ⟨utilities_2, same_length_2⟩ := b
+  obtain ⟨utilities, same_length⟩ := c
+  simp_all only
+  rw [same_length] at same_length_1 same_length_2
+  symm at same_length_1 same_length_2
+  exact index_list_zipWith_left_cancel utilities_1 utilities_2 utilities (i.cast same_length) same_length_1 same_length_2 a_eq_b
+
+theorem index_lt_list_zipWith_left_cancel (a b c : List ℚ) (i: Fin c.length)
+    (a_len : a.length = c.length) (b_len : b.length = c.length)
+    (a_lt_b : a[i] < b[i]):
+    (List.zipWith (· + ·) c a)[i]'(by simp_all only [Fin.is_lt, List.length_zipWith, min_self])
+      < (List.zipWith (· + ·) c b)[i]'(by simp_all only [Fin.is_lt, List.length_zipWith, min_self]) := by
+  induction c generalizing a b with
+  | nil =>
+    revert a_len b_len
+    simp_all only [List.zipWith_nil_left, List.length_nil, List.length_eq_zero, implies_true]
+  | cons c cs _ =>
+    match a, b with
+    | [], _ => simp at a_len
+    | _, [] => simp at b_len
+    | a::as, b::bs =>
+      simp only [List.length_cons, add_left_inj] at a_len b_len
+      simp only [List.zipWith_cons_cons, List.cons.injEq, add_right_inj]
+      cases i
+      case mk val isLt =>
+        induction val
+        case zero =>
+          simp_all only [Fin.getElem_fin, List.getElem_zipWith, add_lt_add_iff_left, implies_true,
+            List.length_cons, Fin.zero_eta, Fin.val_zero, List.getElem_cons_zero]
+        case succ n _ =>
+          simp_all only [Fin.getElem_fin, List.getElem_zipWith, add_lt_add_iff_left, implies_true,
+            List.length_cons, gt_iff_lt, List.getElem_cons_succ]
+
+theorem UtilityProfile.index_lt_add_left_cancel (a b c : UtilityProfile L) (i: Fin L.length)
+    (a_lt_b:
+      a.utilities[i]'(by exact Fin_can_index_utilities i a)
+        < b.utilities[i]'(by exact Fin_can_index_utilities i b)
+    ):
+    (c + a).utilities[i]'(by exact Fin_can_index_utilities i (c + a))
+        < (c + b).utilities[i]'(by exact Fin_can_index_utilities i (c + b)):= by
+  unfold UtilityProfile.add HAdd.hAdd instHAdd Add.add
+  obtain ⟨utilities_1, same_length_1⟩ := a
+  obtain ⟨utilities_2, same_length_2⟩ := b
+  obtain ⟨utilities, same_length⟩ := c
+  simp_all only
+  rw [same_length] at same_length_1 same_length_2
+  symm at same_length_1 same_length_2
+  exact index_lt_list_zipWith_left_cancel utilities_1 utilities_2 utilities (i.cast same_length) same_length_1 same_length_2 a_lt_b
+
+theorem UtilityProfile.index_nat_lt_add_left_cancel (a b c : UtilityProfile L) (i: Nat) (i_Lt: i < L.length)
+    (a_lt_b:
+      a.utilities[i]'(by exact Nat_can_index_utilities i a i_Lt)
+        < b.utilities[i]'(by exact Nat_can_index_utilities i b i_Lt)
+    ):
+    (c + a).utilities[i]'(by exact Nat_can_index_utilities i (c + a) i_Lt)
+      < (c + b).utilities[i]'(by exact Nat_can_index_utilities i (c + b) i_Lt) := by
+  unfold UtilityProfile.add HAdd.hAdd instHAdd Add.add
+  obtain ⟨utilities_1, same_length_1⟩ := a
+  obtain ⟨utilities_2, same_length_2⟩ := b
+  obtain ⟨utilities, same_length⟩ := c
+  simp_all only
+  rw [same_length] at same_length_1 same_length_2 i_Lt
+  symm at same_length_1 same_length_2
+  exact index_lt_list_zipWith_left_cancel utilities_1 utilities_2 utilities ⟨i, i_Lt⟩ same_length_1 same_length_2 a_lt_b
 
 instance UtilityProfile.mul : HMul Rat (UtilityProfile L) (UtilityProfile L) where
   hMul x y := by
@@ -147,7 +382,7 @@ def zero_utility_profile (L: List Type) : UtilityProfile L := by
   exact up
 
 -- eval_sp automatically converts a pure strategy utility function to a mixed strategy utility function
-def eval_sp (S: StrategyProfile L) (PSUF: PureStrategyProfile L → UtilityProfile L) (acc: PureStrategyProfile L) (id: Fin L.length) : UtilityProfile L := by
+def eval_sp (S: MixedStrategyProfile L) (PSUF: PureStrategyProfile L → UtilityProfile L) (acc: PureStrategyProfile L) (id: Fin L.length) : UtilityProfile L := by
   by_cases id_not_last :
     id ≥ ⟨
       L.length - 1,
@@ -155,100 +390,63 @@ def eval_sp (S: StrategyProfile L) (PSUF: PureStrategyProfile L → UtilityProfi
          exact Fin.pos id
     ⟩
   case pos =>
-      cases S.strategies id
-      case pure p =>
-        exact PSUF ⟨by
-          intro i
-          by_cases id_eq_i : id = i
-          case pos =>
-              rw [id_eq_i] at p
-              exact p
-          case neg =>
-              exact acc.strategies i
-        ⟩
-      case mixed m =>
-        exact List.foldl
-          (λ a b => a + b)
-          (by exact zero_utility_profile L)
-          (List.map
-            (λ a => a.snd *
-              (PSUF
-                ⟨by
-                  intro i
-                  by_cases id_eq_i : id = i
-                  case pos =>
-                      apply Prod.fst at a
-                      rw [id_eq_i] at a
-                      exact a
-                  case neg =>
-                      exact acc.strategies i
-                ⟩
-              )
-            )
-            (List.zip m.strategies m.probabilities)
+    let m := S.strategies id
+    exact List.foldl
+      (λ a b => a + b)
+      (zero_utility_profile L)
+      (List.map
+        (λ a => a.snd *
+          (PSUF
+            ⟨by
+              intro i
+              by_cases id_eq_i : id = i
+              case pos =>
+                  apply Prod.fst at a
+                  rw [id_eq_i] at a
+                  exact a
+              case neg =>
+                  exact acc.strategies i
+            ⟩
           )
+        )
+        (List.zip m.strategies m.probabilities)
+      )
   case neg =>
-      cases S.strategies id
-      case pure p =>
-        exact eval_sp S PSUF
-          ⟨by
-            intro i
-            by_cases id_eq_i : id = i
-            case pos =>
-                rw [id_eq_i] at p
-                exact p
-            case neg =>
-                exact acc.strategies i
-          ⟩
-          ⟨id.val + 1, by
-            simp_all
-            conv =>
-              equals ↑id < L.length - 1 =>
-                simp_all
-                apply Iff.intro
-                · intro _
-                  exact id_not_last
-                · intro _
-                  exact
-                    Nat.add_lt_of_lt_sub
-                      id_not_last
-            exact id_not_last
-          ⟩
-      case mixed m =>
-        exact List.foldl
-          (λ a b => a + b)
-          (by exact zero_utility_profile L)
-          (List.map
-            (λ a => a.snd *
-              (eval_sp S PSUF
-                ⟨by
-                  intro i
-                  by_cases id_eq_i : id = i
-                  case pos =>
-                    apply Prod.fst at a
-                    rw [id_eq_i] at a
-                    exact a
-                  case neg =>
-                      exact acc.strategies i
-                ⟩
-                ⟨id.val + 1, by
+    let m := S.strategies id
+    exact List.foldl
+      (λ a b => a + b)
+      (zero_utility_profile L)
+      (List.map
+        (λ a => a.snd *
+          (eval_sp S PSUF
+            ⟨by
+              intro i
+              by_cases id_eq_i : id = i
+              case pos =>
+                apply Prod.fst at a
+                rw [id_eq_i] at a
+                exact a
+              case neg =>
+                  exact acc.strategies i
+            ⟩
+            ⟨id.val + 1, by
+              simp_all
+              conv =>
+                equals ↑id < L.length - 1 =>
                   simp_all
-                  conv =>
-                    equals ↑id < L.length - 1 =>
-                      simp_all
-                      apply Iff.intro
-                      · intro _
-                        exact id_not_last
-                      · intro _
-                        exact
-                          Nat.add_lt_of_lt_sub
-                            id_not_last
-                  exact id_not_last
-                ⟩
-              )
-            )
-            (List.zip m.strategies m.probabilities)
+                  apply Iff.intro
+                  · intro _
+                    exact id_not_last
+                  · intro _
+                    exact
+                      Nat.add_lt_of_lt_sub
+                        id_not_last
+              exact id_not_last
+            ⟩
           )
+        )
+        (List.zip m.strategies m.probabilities)
+      )
 termination_by L.length - id
 
 -- a UtilityFunction is a function that takes a StrategyProfile and returns a Utility
@@ -261,7 +459,7 @@ def UtilityFunction.pure_apply : UtilityFunction L → PureStrategyProfile L →
   | mk x => λ p => x p
 
 @[aesop norm unfold]
-def UtilityFunction.apply : UtilityFunction L → L.length > 0 → PureStrategyProfile L → StrategyProfile L → UtilityProfile L
+def UtilityFunction.apply : UtilityFunction L → L.length > 0 → PureStrategyProfile L → MixedStrategyProfile L → UtilityProfile L
   | mk x => λ l psp sp => eval_sp sp x psp ⟨0, l⟩
 
 -- a Game is a number of players, a list of strategies for each player, and a utility function
@@ -271,10 +469,10 @@ structure Game (L: List Type) where
   (at_least_one_player: List.length L > 0)
   (pure_strategy_profile: PureStrategyProfile L)
 
-def Game.strategy_profile : Game L → StrategyProfile L := by
+def Game.strategy_profile : Game L → MixedStrategyProfile L := by
   intro g
   have psp : PureStrategyProfile L := by exact g.pure_strategy_profile
-  let sp : StrategyProfile L := ⟨λ i => Strategy.pure (psp.strategies i)⟩
+  let sp : MixedStrategyProfile L := ⟨λ i => PureStrategy.asMixed (psp.strategies i)⟩
   exact sp
 
 -- Game.pure_play executes the game for a given PureStrategyProfile, and returns a list of Utilities
@@ -283,7 +481,7 @@ def Game.pure_play : Game L → PureStrategyProfile L → UtilityProfile L :=
 
 -- Game.play executes the game for a given StrategyProfile, and returns a list of Utilities
 @[aesop norm unfold]
-def Game.play : Game L → StrategyProfile L → UtilityProfile L :=
+def Game.play : Game L → MixedStrategyProfile L → UtilityProfile L :=
   λ g sp => g.utility.apply
               g.at_least_one_player
               (by exact g.pure_strategy_profile)
@@ -292,33 +490,46 @@ def Game.play : Game L → StrategyProfile L → UtilityProfile L :=
 -- two strategy profiles are NChange with a list of deltas if those profiles are only possibly
 -- different at those deltas
 @[aesop norm unfold]
-def NChange (L: List Type) (A B: StrategyProfile L) (deltas: List (Fin (List.length L))) : Prop :=
+def NChange (L: List Type) (A B: MixedStrategyProfile L) (deltas: List (Fin (List.length L))) : Prop :=
   ∀ (i: Fin (List.length L)), A.strategies i = B.strategies i ∨ deltas.contains i
 
 -- two StrategyProfiles are UnilateralChange if at most one of their players strategies are different
 -- (delta is the number of the player whose strategy changed, if one exists)
 @[aesop norm unfold]
-def UnilateralChange (L: List Type) (A B: StrategyProfile L) (delta: Fin (List.length L)) : Prop :=
+def UnilateralChange (L: List Type) (A B: MixedStrategyProfile L) (delta: Fin (List.length L)) : Prop :=
   NChange L A B [delta]
 
 -- S does at least as well as S' does at delta
 @[aesop norm unfold]
-def DoesAtLeastAsWellAs (L: List Type) (G: Game L) (S S': StrategyProfile L) (delta: Fin (List.length L)) : Prop :=
+def DoesAtLeastAsWellAs (L: List Type) (G: Game L) (S S': MixedStrategyProfile L) (delta: Fin (List.length L)) : Prop :=
   let thisUtilities: UtilityProfile L := (G.play S)
   let otherUtilities: UtilityProfile L := (G.play S')
   otherUtilities.utilities.get (Fin.cast otherUtilities.same_length delta)
     ≤ thisUtilities.utilities.get (Fin.cast thisUtilities.same_length delta)
 
+def DoesBetterThan  (L: List Type) (G: Game L) (S S': MixedStrategyProfile L) (delta: Fin (List.length L)) : Prop :=
+  let thisUtilities: UtilityProfile L := (G.play S)
+  let otherUtilities: UtilityProfile L := (G.play S')
+  otherUtilities.utilities.get (Fin.cast otherUtilities.same_length delta)
+    < thisUtilities.utilities.get (Fin.cast thisUtilities.same_length delta)
+
 -- A StrategyProfile fulfills NashEquilibrium when no player can increase their utility by unilaterally changing their strategy
 @[aesop norm unfold]
-def NashEquilibrium (L: List Type) (G: Game L) (S: StrategyProfile L) : Prop :=
-  -- for every StrategyProfile and delta, if it's a UnilateralChange, S must outperform S' for delta
-  ∀ (S': StrategyProfile L)
+def NashEquilibrium (L: List Type) (G: Game L) (S: MixedStrategyProfile L) : Prop :=
+  -- for every StrategyProfile and delta, if it's a UnilateralChange, S must do at least as well as S' for delta
+  ∀ (S': MixedStrategyProfile L)
     (delta: Fin (List.length L)),
     UnilateralChange L S S' delta → DoesAtLeastAsWellAs L G S S' delta
 
+-- A StrategyProfile fulfills StrictNashEquilibrium when no player can increase or keep their utility by unilaterally changing their strategy
+def StrictNashEquilibrium (L: List Type) (G: Game L) (S: MixedStrategyProfile L) : Prop :=
+  -- for every StrategyProfile and delta, if it's a UnilateralChange, S must outperform S' for delta
+  ∀ (S': MixedStrategyProfile L)
+    (delta: Fin (List.length L)),
+    UnilateralChange L S S' delta → DoesBetterThan L G S S' delta
+
 @[simp]
-theorem nchange_comm: ∀ (S': StrategyProfile L) (_: NChange L S S' deltas), NChange L S' S deltas := by
+theorem nchange_comm: ∀ (S': MixedStrategyProfile L) (_: NChange L S S' deltas), NChange L S' S deltas := by
   intro S' og
   unfold NChange at og ⊢
   conv => ext i
@@ -353,7 +564,7 @@ theorem nchange_trans: NChange L S S' deltas1 → NChange L S' S'' deltas2 → N
     | inr h_2 => simp_all only [or_self, or_true]
 
 @[simp]
-theorem nchange_split: NChange L S S'' (deltas1 ++ deltas2) → ∃ (S': StrategyProfile L), NChange L S S' deltas1 ∧ NChange L S' S'' deltas2 := by
+theorem nchange_split: NChange L S S'' (deltas1 ++ deltas2) → ∃ (S': MixedStrategyProfile L), NChange L S S' deltas1 ∧ NChange L S' S'' deltas2 := by
   intro nc
   constructor
   case w =>
@@ -400,7 +611,7 @@ theorem eventually_nchange: ∃ (deltas: List (Fin (List.length L))), NChange L 
   simp_all only [List.elem_eq_mem, List.mem_finRange, decide_True, deltas]
 
 @[simp]
-theorem uc_comm: ∀ (S': StrategyProfile L) (_: UnilateralChange L S S' delta), UnilateralChange L S' S delta := by
+theorem uc_comm: ∀ (S': MixedStrategyProfile L) (_: UnilateralChange L S S' delta), UnilateralChange L S' S delta := by
   intro S' og
   unfold UnilateralChange at og ⊢
   exact nchange_comm S' og
@@ -421,7 +632,7 @@ theorem uc_trans: UnilateralChange L S S' delta1 → UnilateralChange L S' S'' d
 theorem nchange_to_list_nchange (NC: NChange L S S' deltas):
   (h: (List.length deltas) > 0) →
   ∀ (i: Fin (List.length deltas)),
-    ∃ (x x': StrategyProfile L),
+    ∃ (x x': MixedStrategyProfile L),
       i = ⟨0, by simp_all only [List.get_eq_getElem, List.elem_eq_mem, decide_eq_true_eq, gt_iff_lt]⟩
         → x = S
       ∧ i = ⟨deltas.length - 1, by simp_all only [List.get_eq_getElem, List.elem_eq_mem, decide_eq_true_eq, gt_iff_lt, tsub_lt_self_iff, zero_lt_one, and_self]⟩
@@ -440,7 +651,7 @@ theorem nchange_to_list_nchange (NC: NChange L S S' deltas):
 theorem nchange_to_ex_uc (NC: NChange L S S' deltas):
   ∀ (i: Fin (List.length deltas)),
     (h: (List.length deltas) > 0) →
-    ∃ (x x': StrategyProfile L),
+    ∃ (x x': MixedStrategyProfile L),
       i = ⟨0, by simp_all only [List.get_eq_getElem, List.elem_eq_mem, decide_eq_true_eq, gt_iff_lt]⟩
         → x = S
       ∧ i = ⟨deltas.length - 1, by simp_all only [List.get_eq_getElem, List.elem_eq_mem, decide_eq_true_eq, gt_iff_lt, tsub_lt_self_iff, zero_lt_one, and_self]⟩
@@ -449,7 +660,7 @@ theorem nchange_to_ex_uc (NC: NChange L S S' deltas):
       := by exact fun i h ↦ nchange_to_list_nchange NC h i
 
 theorem eventually_uc:
-  ∃ (LS: List (StrategyProfile L)),
+  ∃ (LS: List (MixedStrategyProfile L)),
     (
       LS[0]'(by exact List.length_pos.mpr sorry) = S ∧
       LS[LS.length - 1]'(by simp_all only [ne_eq, tsub_lt_self_iff, zero_lt_one, and_true]
@@ -475,17 +686,23 @@ theorem dalawa_self: DoesAtLeastAsWellAs L G S S delta := by
 theorem dalawa_trans: DoesAtLeastAsWellAs L G S S' delta → DoesAtLeastAsWellAs L G S' S'' delta → DoesAtLeastAsWellAs L G S S'' delta := by
   unfold DoesAtLeastAsWellAs
   intro ss' s's''
-  unfold Game.play at ss' s's'' ⊢
-  unfold UtilityFunction.apply at ss' s's'' ⊢
-  simp_all only [List.get_eq_getElem, Fin.coe_cast]
-  sorry
-  /- exact
-    Preorder.le_trans
-      (eval_sp S'' G.1.1 G.pure_strategy_profile ⟨0, PlayGame.proof_1 L N G⟩).utilities[↑delta]
-      (eval_sp S' G.1.1 G.pure_strategy_profile ⟨0, PlayGame.proof_1 L N G⟩).utilities[↑delta]
-      (eval_sp S G.1.1 G.pure_strategy_profile ⟨0, PlayGame.proof_1 L N G⟩).utilities[↑delta]
-      s's''
-      ss' -/
+  exact
+    let thisUtilities := G.play S;
+    let otherUtilities := G.play S'';
+    Preorder.le_trans (otherUtilities.utilities.get (Fin.cast otherUtilities.same_length delta))
+      ((G.play S').utilities.get (Fin.cast (G.play S').same_length delta))
+      (thisUtilities.utilities.get (Fin.cast thisUtilities.same_length delta)) s's'' ss'
+
+theorem dbt_imp_dalawa: DoesBetterThan L G S S' delta → DoesAtLeastAsWellAs L G S S' delta := by
+  intro dbt
+  unfold DoesBetterThan at dbt
+  unfold DoesAtLeastAsWellAs
+  exact le_of_lt dbt
+
+theorem dbt_trans: DoesBetterThan L G S S' delta → DoesBetterThan L G S' S'' delta → DoesBetterThan L G S S'' delta := by
+  unfold DoesBetterThan
+  intro ss' s's''
+  exact gt_trans ss' s's''
 
 @[simp]
 theorem nasheq_exists: NashEquilibrium L G S
@@ -511,7 +728,7 @@ theorem not_nasheq_if_uc_better: UnilateralChange L A B i ∧ ¬DoesAtLeastAsWel
 @[simp]
 theorem exists_better_uc_if_not_nasheq:
     ¬NashEquilibrium L G S
-      → (∃ (S': StrategyProfile L) (delta: Fin (List.length L)),
+      → (∃ (S': MixedStrategyProfile L) (delta: Fin (List.length L)),
           UnilateralChange L S S' delta ∧ DoesAtLeastAsWellAs L G S' S delta) := by
   intro not_ne
   unfold NashEquilibrium at not_ne
@@ -525,7 +742,7 @@ theorem exists_better_uc_if_not_nasheq:
 
 @[simp]
 theorem better_than_all_ucs_is_nasheq:
-    (∀ (S': StrategyProfile L) (delta: Fin (List.length L)),
+    (∀ (S': MixedStrategyProfile L) (delta: Fin (List.length L)),
       UnilateralChange L S S' delta → DoesAtLeastAsWellAs L G S S' delta)
         → NashEquilibrium L G S := by
   intro as'delta
@@ -535,8 +752,8 @@ theorem better_than_all_ucs_is_nasheq:
   exact uc
 
 @[simp]
-theorem all_ucs_not_nash_eq_then_nash_eq: (∀ (S': StrategyProfile L) (delta: Fin (List.length L)), UnilateralChange L S S' delta → ¬NashEquilibrium L G S') → NashEquilibrium L G S := by
-  have Sne : StrategyProfile L := G.strategy_profile
+theorem all_ucs_not_nash_eq_then_nash_eq: (∀ (S': MixedStrategyProfile L) (delta: Fin (List.length L)), UnilateralChange L S S' delta → ¬NashEquilibrium L G S') → NashEquilibrium L G S := by
+  have Sne : MixedStrategyProfile L := G.strategy_profile
   have nes' : NashEquilibrium L G Sne
     := by exact nasheq_exists
   intro as'delta S' delta uc
@@ -572,7 +789,7 @@ theorem all_ucs_not_nash_eq_then_nash_eq: (∀ (S': StrategyProfile L) (delta: F
 inductive PrisonersDilemmaStrategies where
 | silent
 | confess
-deriving BEq
+deriving BEq, DecidableEq
 
 @[aesop norm unfold]
 def PL : List Type := [PrisonersDilemmaStrategies, PrisonersDilemmaStrategies]
@@ -596,29 +813,30 @@ def PrisonersDilemmaPureProfile : PureStrategyProfile PL :=
   }
 
 @[aesop norm unfold]
-def PrisonersDilemmaSilentSilentProfile : StrategyProfile PL :=
+def PrisonersDilemmaSilentSilentProfile : MixedStrategyProfile PL :=
   { strategies := λ i => match i with
-                          | ⟨0, _⟩ => Strategy.pure ⟨PrisonersDilemmaStrategies.silent⟩
-                          | ⟨1, _⟩ => Strategy.pure ⟨PrisonersDilemmaStrategies.silent⟩
+                          | ⟨0, _⟩ => PureStrategy.asMixed ⟨PrisonersDilemmaStrategies.silent⟩
+                          | ⟨1, _⟩ => PureStrategy.asMixed ⟨PrisonersDilemmaStrategies.silent⟩
   }
 
 @[aesop norm unfold]
-def PrisonersDilemmaSilentConfessProfile : StrategyProfile PL :=
+def PrisonersDilemmaSilentConfessProfile : MixedStrategyProfile PL :=
   { strategies := λ i => match i with
-                          | ⟨0, _⟩ => Strategy.pure ⟨PrisonersDilemmaStrategies.silent⟩
-                          | ⟨1, _⟩ => Strategy.pure ⟨PrisonersDilemmaStrategies.confess⟩
+                          | ⟨0, _⟩ => PureStrategy.asMixed ⟨PrisonersDilemmaStrategies.silent⟩
+                          | ⟨1, _⟩ => PureStrategy.asMixed ⟨PrisonersDilemmaStrategies.confess⟩
   }
 
 @[aesop norm unfold]
-def PrisonersDilemmaConfessConfessProfile : StrategyProfile PL :=
+def PrisonersDilemmaConfessConfessProfile : MixedStrategyProfile PL :=
   { strategies := λ i => match i with
-                          | ⟨0, _⟩ => Strategy.pure ⟨PrisonersDilemmaStrategies.confess⟩
-                          | ⟨1, _⟩ => Strategy.pure ⟨PrisonersDilemmaStrategies.confess⟩
+                          | ⟨0, _⟩ => PureStrategy.asMixed ⟨PrisonersDilemmaStrategies.confess⟩
+                          | ⟨1, _⟩ => PureStrategy.asMixed ⟨PrisonersDilemmaStrategies.confess⟩
   }
 
 @[aesop norm unfold]
 def PrisonersDilemmaGame : Game PL :=
-{ utility := PrisonersDilemmaUtilityFunction,
+{
+  utility := PrisonersDilemmaUtilityFunction,
   at_least_one_player := Nat.zero_lt_succ 1
   pure_strategy_profile := by exact PrisonersDilemmaPureProfile
 }
@@ -653,10 +871,14 @@ theorem NotNashEquilibriumSilentSilent : ¬ NashEquilibrium PL PrisonersDilemmaG
     case left => exact PDSilentConfessIsUnilateralOfPDSilentSilent
     case right => unfold PL PrisonersDilemmaGame PrisonersDilemmaSilentSilentProfile
                     PrisonersDilemmaSilentConfessProfile PrisonersDilemmaPureProfile PrisonersDilemmaUtilityFunction
-                    DoesAtLeastAsWellAs Game.play UtilityFunction.apply eval_sp
+                    DoesAtLeastAsWellAs Game.play UtilityFunction.apply eval_sp PureStrategy.asMixed
                   simp_all [↓dreduceDIte]
-                  unfold eval_sp
+                  unfold eval_sp UtilityProfile.mul
                   simp_all [↓reduceDIte]
+                  apply UtilityProfile.index_nat_lt_add_left_cancel _ _ (zero_utility_profile [PrisonersDilemmaStrategies, PrisonersDilemmaStrategies]) 1 (by simp_all)
+                  simp_all only
+                  apply UtilityProfile.index_nat_lt_add_left_cancel _ _ (zero_utility_profile [PrisonersDilemmaStrategies, PrisonersDilemmaStrategies]) 1 (by simp_all)
+                  simp_all only [List.getElem_cons_succ, List.getElem_cons_zero]
                   rfl
 
 theorem ConfessConfessDALAWAMixedOne :
@@ -664,8 +886,8 @@ theorem ConfessConfessDALAWAMixedOne :
       DoesAtLeastAsWellAs PL PrisonersDilemmaGame
         PrisonersDilemmaConfessConfessProfile
         ⟨λ i => match i with
-                | ⟨0, _⟩ => Strategy.mixed m
-                | ⟨1, _⟩ => Strategy.pure ⟨PrisonersDilemmaStrategies.confess⟩⟩
+                | ⟨0, _⟩ => m
+                | ⟨1, _⟩ => PureStrategy.asMixed ⟨PrisonersDilemmaStrategies.confess⟩⟩
         ⟨0, by unfold PL; simp_all⟩
         := by
   intro m
@@ -801,25 +1023,40 @@ def IPD_UtilityRecurse (psp: PureStrategyProfile IPDList) (p1_list: List Prisone
 def IPD_UtilityFunction : UtilityFunction IPDList :=
   ⟨λ S => IPD_UtilityRecurse S [] [] 5⟩
 
-def AlwaysConfess : PureStrategyProfile IPDList :=
-  {
-    strategies := λ i => match i with
-                          | ⟨0, _⟩ => ⟨⟨λ _ _ => PrisonersDilemmaStrategies.confess⟩⟩
-                          | ⟨1, _⟩ => ⟨⟨λ _ _ => PrisonersDilemmaStrategies.confess⟩⟩
-  }
+def AlwaysConfess : IPD_Strategy := ⟨λ _ _ => PrisonersDilemmaStrategies.confess⟩
+
+def AlwaysSilent : IPD_Strategy := ⟨λ _ _ => PrisonersDilemmaStrategies.silent⟩
 
 def TitForTat : IPD_Strategy :=
   ⟨
     λ _ other =>
-      if (other.contains PrisonersDilemmaStrategies.confess) then
-        PrisonersDilemmaStrategies.confess
-      else
-        PrisonersDilemmaStrategies.silent
+      match other with
+      | [] => PrisonersDilemmaStrategies.silent
+      | x :: _ => x
   ⟩
+
+def Alternate : IPD_Strategy :=
+  ⟨
+    λ self _ =>
+      match self with
+      | [] => PrisonersDilemmaStrategies.confess
+      | x :: _ =>
+          if (x = PrisonersDilemmaStrategies.confess) then
+            PrisonersDilemmaStrategies.silent
+          else
+            PrisonersDilemmaStrategies.confess
+  ⟩
+
+def BothAlwaysConfess : PureStrategyProfile IPDList :=
+  {
+    strategies := λ i => match i with
+                          | ⟨0, _⟩ => ⟨AlwaysConfess⟩
+                          | ⟨1, _⟩ => ⟨AlwaysConfess⟩
+  }
 
 def IPDGame : Game IPDList :=
   {
     utility := IPD_UtilityFunction
     at_least_one_player := Nat.zero_lt_succ 1
-    pure_strategy_profile := by exact AlwaysConfess
+    pure_strategy_profile := by exact BothAlwaysConfess
   }
