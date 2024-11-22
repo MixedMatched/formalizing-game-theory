@@ -2,7 +2,7 @@ import Mathlib.Tactic
 import Aesop
 
 -- a Utility is a Rational number representing the payoff for a single player of a given set of strategies
--- (should probably eventually be something with total order and optional decidability)
+-- (should probably eventually be anything with total order and optional decidability)
 
 -- a PureStrategy is an instance of the strategy type
 @[aesop safe [constructors, cases]]
@@ -407,8 +407,52 @@ def zero_utility_profile (L: List Type) : UtilityProfile L := by
   let up : UtilityProfile L := ⟨utilities, same_length⟩
   exact up
 
+def list_zipWith_zero_list (a b : List ℚ) (len: a.length = b.length)
+    (b_0: b = (List.map (fun x ↦ 0) a)) :
+    List.zipWith (· + ·) b a = a := by
+  induction a generalizing b with
+  | nil =>
+    revert len
+    simp_all only [List.map_nil, List.length_nil, List.zipWith_same, imp_self]
+  | cons a as ih =>
+    subst b_0
+    simp_all only [List.length_cons, List.map_cons, List.length_map, List.zipWith_cons_cons, zero_add,
+      List.cons.injEq, true_and]
+    apply ih
+    on_goal 2 => {rfl
+    }
+    · simp_all only [List.length_map]
+
+def zero_util_lists_eq (len: a_list.length = b_list.length) : List.map (fun _ ↦ Rat.mk' 0 1) a_list = List.map (fun _ ↦ Rat.mk' 0 1) b_list := by
+    simp only [Rat.mk_den_one, Int.cast_zero]
+    induction b_list <;> induction a_list
+    case nil.nil => simp_all only [List.length_nil, List.length_eq_zero, List.map_nil]
+    case nil.cons => simp_all only [List.length_nil, List.length_eq_zero, List.map_nil,
+      implies_true, List.length_cons, AddLeftCancelMonoid.add_eq_zero, one_ne_zero, and_false]
+    case cons.nil => simp_all only [List.length_cons, add_right_eq_self, one_ne_zero, List.map_nil,
+      List.nil_eq, List.map_eq_nil_iff, false_implies, List.length_nil, self_eq_add_left,
+      AddLeftCancelMonoid.add_eq_zero, List.length_eq_zero, and_false]
+    case cons.cons a as iha b bs ihb =>
+      simp_all only [List.length_cons, List.map_cons]
+      simp_all only [add_right_eq_self, one_ne_zero, false_implies, add_left_inj, List.cons.injEq, true_and,
+        true_implies, self_eq_add_right, List.ne_cons_self, implies_true]
+      exact zero_util_lists_eq len
+termination_by a_list.length
+decreasing_by simp_all only [Rat.mk_den_one, Int.cast_zero, List.length_cons, List.map_cons,
+  add_right_eq_self, one_ne_zero, false_implies, add_left_inj, lt_add_iff_pos_right, zero_lt_one]
+
+def UtilityProfile.zero_add : zero_utility_profile L + up = up := by
+  obtain ⟨utilities, same_length⟩ := up
+  symm at same_length
+  have z_length : utilities.length = (zero_utility_profile L).utilities.length := by
+    rw [(zero_utility_profile L).same_length] at same_length
+    exact same_length
+  unfold zero_utility_profile UtilityProfile.add HAdd.hAdd instHAdd Add.add
+  simp_all only [mk.injEq]
+  exact list_zipWith_zero_list utilities (List.map (fun _ ↦ Rat.mk' 0 1) L) z_length (by exact zero_util_lists_eq same_length)
+
 -- eval_sp automatically converts a pure strategy utility function to a mixed strategy utility function
-def eval_sp (S: MixedStrategyProfile L) (PSUF: PureStrategyProfile L → UtilityProfile L) (acc: PureStrategyProfile L) (id: Fin L.length) : UtilityProfile L := by
+def mixed_function_from_pure (S: MixedStrategyProfile L) (PSUF: PureStrategyProfile L → UtilityProfile L) (acc: PureStrategyProfile L) (id: Fin L.length) : UtilityProfile L := by
   by_cases id_not_last :
     id ≥ ⟨
       L.length - 1,
@@ -444,7 +488,7 @@ def eval_sp (S: MixedStrategyProfile L) (PSUF: PureStrategyProfile L → Utility
       (zero_utility_profile L)
       (List.map
         (λ a => a.snd *
-          (eval_sp S PSUF
+          (mixed_function_from_pure S PSUF
             ⟨by
               intro i
               by_cases id_eq_i : id = i
@@ -475,6 +519,34 @@ def eval_sp (S: MixedStrategyProfile L) (PSUF: PureStrategyProfile L → Utility
       )
 termination_by L.length - id
 
+def pure_mixed_function_is_pure : (msp: MixedStrategyProfile L) → (pure: msp.isPure) → (mixed_function_from_pure msp psuf acc ⟨0, l⟩ = psuf (msp.asPure pure)) := by
+  intro msp pure
+  unfold mixed_function_from_pure
+  cases L
+  case nil =>
+    exfalso
+    simp_all only [List.length_nil, lt_self_iff_false]
+  case cons head tail =>
+    unfold UtilityProfile.add
+    simp_all
+    split
+    next h =>
+      conv =>
+        lhs
+        arg 3
+        arg 2
+        equals [((msp.strategies ⟨0, l⟩).asPure (pure ⟨0, l⟩), 1)] =>
+          sorry
+      unfold MixedStrategyProfile.asPure MixedStrategy.asPure
+      unfold MixedStrategyProfile.isPure MixedStrategy.isPure at pure
+      simp only [List.length_cons, List.get_eq_getElem]
+      specialize pure ⟨0, l⟩
+      simp_all only [List.length_cons, Fin.zero_eta, List.get_eq_getElem, Fin.val_zero, List.getElem_cons_zero,
+        List.map_cons, List.map_nil, List.foldl_cons, List.foldl_nil]
+      rw [UtilityProfile.zero_add]
+      sorry
+    next h => sorry
+
 -- a UtilityFunction is a function that takes a StrategyProfile and returns a Utility
 @[aesop safe [constructors, cases]]
 inductive UtilityFunction (L: List Type) where
@@ -486,7 +558,12 @@ def UtilityFunction.pure_apply : UtilityFunction L → PureStrategyProfile L →
 
 @[aesop norm unfold]
 def UtilityFunction.apply : UtilityFunction L → L.length > 0 → PureStrategyProfile L → MixedStrategyProfile L → UtilityProfile L
-  | mk x => λ l psp sp => eval_sp sp x psp ⟨0, l⟩
+  | mk x => λ l psp sp => mixed_function_from_pure sp x psp ⟨0, l⟩
+
+def UtilityFunction.apply_of_pure_eq_pure_apply : (uf: UtilityFunction L) → (msp: MixedStrategyProfile L) → (pure: msp.isPure) → (uf.apply alop psp msp = uf.pure_apply (msp.asPure pure)) := by
+  intro uf msp pure
+  unfold UtilityFunction.apply UtilityFunction.pure_apply
+  exact pure_mixed_function_is_pure msp pure
 
 -- a Game is a number of players, a list of strategies for each player, and a utility function
 @[aesop safe [constructors, cases]]
@@ -515,7 +592,8 @@ def Game.play : Game L → MixedStrategyProfile L → UtilityProfile L :=
 
 def Game.play_of_pure_eq_pure_play (G: Game L) : (msp: MixedStrategyProfile L) → (pure: msp.isPure) → (G.play msp = G.pure_play (msp.asPure pure)) := by
   intro msp pure
-  sorry
+  unfold Game.play Game.pure_play
+  exact UtilityFunction.apply_of_pure_eq_pure_apply G.utility msp pure
 
 -- two strategy profiles are NChange with a list of deltas if those profiles are only possibly
 -- different at those deltas
@@ -537,7 +615,7 @@ def DoesAtLeastAsWellAs (L: List Type) (G: Game L) (S S': MixedStrategyProfile L
   otherUtilities.utilities.get (Fin.cast otherUtilities.same_length delta)
     ≤ thisUtilities.utilities.get (Fin.cast thisUtilities.same_length delta)
 
-def DoesBetterThan  (L: List Type) (G: Game L) (S S': MixedStrategyProfile L) (delta: Fin (List.length L)) : Prop :=
+def DoesBetterThan (L: List Type) (G: Game L) (S S': MixedStrategyProfile L) (delta: Fin (List.length L)) : Prop :=
   let thisUtilities: UtilityProfile L := (G.play S)
   let otherUtilities: UtilityProfile L := (G.play S')
   otherUtilities.utilities.get (Fin.cast otherUtilities.same_length delta)
@@ -854,9 +932,9 @@ theorem NotNashEquilibriumSilentSilent : ¬ NashEquilibrium PL PrisonersDilemmaG
     case left => exact PDSilentConfessIsUnilateralOfPDSilentSilent
     case right => unfold PL PrisonersDilemmaGame PrisonersDilemmaSilentSilentProfile
                     PrisonersDilemmaSilentConfessProfile PrisonersDilemmaPureProfile PrisonersDilemmaUtilityFunction
-                    DoesAtLeastAsWellAs Game.play UtilityFunction.apply eval_sp PureStrategy.asMixed
+                    DoesAtLeastAsWellAs Game.play UtilityFunction.apply mixed_function_from_pure PureStrategy.asMixed
                   simp_all [↓dreduceDIte]
-                  unfold eval_sp UtilityProfile.mul
+                  unfold mixed_function_from_pure UtilityProfile.mul
                   simp_all [↓reduceDIte]
                   apply UtilityProfile.index_nat_lt_add_left_cancel _ _ (zero_utility_profile [PrisonersDilemmaStrategies, PrisonersDilemmaStrategies]) 1 (by simp_all)
                   simp_all only
