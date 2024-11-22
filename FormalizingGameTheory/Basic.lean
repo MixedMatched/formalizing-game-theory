@@ -629,49 +629,6 @@ theorem uc_trans: UnilateralChange L S S' delta1 → UnilateralChange L S' S'' d
   exact nchange_trans uc1 uc2
 
 @[simp]
-theorem nchange_to_list_nchange (NC: NChange L S S' deltas):
-  (h: (List.length deltas) > 0) →
-  ∀ (i: Fin (List.length deltas)),
-    ∃ (x x': MixedStrategyProfile L),
-      i = ⟨0, by simp_all only [List.get_eq_getElem, List.elem_eq_mem, decide_eq_true_eq, gt_iff_lt]⟩
-        → x = S
-      ∧ i = ⟨deltas.length - 1, by simp_all only [List.get_eq_getElem, List.elem_eq_mem, decide_eq_true_eq, gt_iff_lt, tsub_lt_self_iff, zero_lt_one, and_self]⟩
-        → x' = S'
-      ∧ NChange L x x' [deltas[i]]
-      := by intro h i
-            cases i
-            case mk val isLt =>
-              induction val
-              case zero =>
-                use S
-                sorry
-              sorry
-
-@[simp]
-theorem nchange_to_ex_uc (NC: NChange L S S' deltas):
-  ∀ (i: Fin (List.length deltas)),
-    (h: (List.length deltas) > 0) →
-    ∃ (x x': MixedStrategyProfile L),
-      i = ⟨0, by simp_all only [List.get_eq_getElem, List.elem_eq_mem, decide_eq_true_eq, gt_iff_lt]⟩
-        → x = S
-      ∧ i = ⟨deltas.length - 1, by simp_all only [List.get_eq_getElem, List.elem_eq_mem, decide_eq_true_eq, gt_iff_lt, tsub_lt_self_iff, zero_lt_one, and_self]⟩
-        → x' = S'
-      ∧ UnilateralChange L x x' deltas[i]
-      := by exact fun i h ↦ nchange_to_list_nchange NC h i
-
-theorem eventually_uc:
-  ∃ (LS: List (MixedStrategyProfile L)),
-    (
-      LS[0]'(by exact List.length_pos.mpr sorry) = S ∧
-      LS[LS.length - 1]'(by simp_all only [ne_eq, tsub_lt_self_iff, zero_lt_one, and_true]
-                            exact List.length_pos.mpr sorry) = S' ∧
-    ∀ (i: Fin (List.length LS)),
-      (hi: i - 1 < LS.length) →
-        ∃ (cdelta: Fin (List.length L)),
-        UnilateralChange L (LS.get ⟨i.val - 1, by simp_all only [ne_eq]⟩) (LS.get i) cdelta)
-      := by sorry
-
-@[simp]
 theorem dalawa_inv: ¬DoesAtLeastAsWellAs L G S S' delta → DoesAtLeastAsWellAs L G S' S delta := by
   intro not_dalawa
   unfold DoesAtLeastAsWellAs at not_dalawa ⊢
@@ -705,7 +662,7 @@ theorem dbt_trans: DoesBetterThan L G S S' delta → DoesBetterThan L G S' S'' d
   exact gt_trans ss' s's''
 
 @[simp]
-theorem nasheq_exists: NashEquilibrium L G S
+theorem nasheq_exists: ∃ (S: MixedStrategyProfile L), NashEquilibrium L G S
   := by sorry -- we need to use a fixed point theorem here :p
 
 @[simp]
@@ -752,23 +709,15 @@ theorem better_than_all_ucs_is_nasheq:
   exact uc
 
 @[simp]
-theorem all_ucs_not_nash_eq_then_nash_eq: (∀ (S': MixedStrategyProfile L) (delta: Fin (List.length L)), UnilateralChange L S S' delta → ¬NashEquilibrium L G S') → NashEquilibrium L G S := by
-  have Sne : MixedStrategyProfile L := G.strategy_profile
-  have nes' : NashEquilibrium L G Sne
-    := by exact nasheq_exists
-  intro as'delta S' delta uc
-  by_cases S_is_ne : Sne = S
-  case pos =>
-    subst S_is_ne
-    apply nes'
-    exact uc
-  case neg =>
-    by_cases ne_is_uc : UnilateralChange L S Sne delta
-    case pos =>
-      specialize as'delta Sne delta ne_is_uc
-      tauto
-    case neg =>
-      sorry
+theorem all_ucs_worse_is_nash_eq:
+    (∀ (S': MixedStrategyProfile L) (delta: Fin (List.length L)),
+      UnilateralChange L S S' delta → ¬DoesAtLeastAsWellAs L G S' S delta)
+        → NashEquilibrium L G S := by
+  intro a
+  apply better_than_all_ucs_is_nasheq
+  intro S' delta uc
+  apply a at uc
+  exact dalawa_inv uc
 
 -- Example: Prisoner's Dilemma
 -- Two prisoners are arrested for a crime. They are held in separate cells and cannot communicate with each other.
@@ -880,26 +829,6 @@ theorem NotNashEquilibriumSilentSilent : ¬ NashEquilibrium PL PrisonersDilemmaG
                   apply UtilityProfile.index_nat_lt_add_left_cancel _ _ (zero_utility_profile [PrisonersDilemmaStrategies, PrisonersDilemmaStrategies]) 1 (by simp_all)
                   simp_all only [List.getElem_cons_succ, List.getElem_cons_zero]
                   rfl
-
-theorem ConfessConfessDALAWAMixedOne :
-    ∀ m: MixedStrategy PrisonersDilemmaStrategies,
-      DoesAtLeastAsWellAs PL PrisonersDilemmaGame
-        PrisonersDilemmaConfessConfessProfile
-        ⟨λ i => match i with
-                | ⟨0, _⟩ => m
-                | ⟨1, _⟩ => PureStrategy.asMixed ⟨PrisonersDilemmaStrategies.confess⟩⟩
-        ⟨0, by unfold PL; simp_all⟩
-        := by
-  intro m
-  unfold DoesAtLeastAsWellAs
-  intro thisUtilities otherUtilities
-  unfold thisUtilities otherUtilities Game.play PrisonersDilemmaGame PrisonersDilemmaUtilityFunction PrisonersDilemmaConfessConfessProfile
-  unfold PL at thisUtilities
-  unfold PL at otherUtilities
-  unfold UtilityFunction.apply
-  simp_all only [List.length_singleton, List.get_eq_getElem, Fin.zero_eta, Fin.isValue, Fin.val_zero, Fin.mk_one,
-    Fin.val_one, Fin.cast_zero]
-  sorry
 
 theorem NashEquilibriumConfessConfess : NashEquilibrium PL PrisonersDilemmaGame PrisonersDilemmaConfessConfessProfile := by
   apply better_than_all_ucs_is_nasheq
