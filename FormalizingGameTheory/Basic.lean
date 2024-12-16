@@ -40,7 +40,7 @@ def MixedStrategy.isPure : MixedStrategy A → Prop :=
 def MixedStrategy.asPure : (m: MixedStrategy A) → m.isPure → PureStrategy A :=
   λ m pure => m.strategies[0]'(by exact Nat.lt_of_sub_eq_succ pure)
 
-def MixedStrategy.length_not_zero : (m: MixedStrategy A) → m.strategies.length ≠ 0 := by
+theorem MixedStrategy.length_not_zero : (m: MixedStrategy A) → m.strategies.length ≠ 0 := by
   intro m
   simp_all only [ne_eq, List.length_eq_zero]
   apply Aesop.BuiltinRules.not_intro
@@ -53,6 +53,60 @@ def MixedStrategy.length_not_zero : (m: MixedStrategy A) → m.strategies.length
     trivial
   . simp_all only [List.foldl_cons, List.mem_cons, forall_eq_or_imp, List.length_cons, self_eq_add_left,
     AddLeftCancelMonoid.add_eq_zero, List.length_eq_zero, one_ne_zero, and_false]
+
+theorem MixedStrategy.is_pure_100_percent :
+  (m: MixedStrategy A)
+    → (pure: m.isPure)
+      → m.probabilities[0]'(by unfold MixedStrategy.isPure at pure
+                               rw [m.same_length] at pure
+                               exact Nat.lt_of_sub_eq_succ pure) = 1 := by
+  intro msp pure
+  unfold MixedStrategy.isPure at pure
+  obtain ⟨strategies, probabilities, probabilities_sum_to_one, probabilities_non_negative, same_length⟩ := msp
+  simp_all only
+  rw [pure] at same_length
+  cases probabilities
+  case mk.nil => tauto
+  case mk.cons head tail sl =>
+    simp_all only [List.length_cons, self_eq_add_left, List.length_eq_zero, List.getElem_cons_zero]
+    subst same_length
+    simp_all only [List.length_singleton]
+    simp_all only [List.foldl_cons, List.foldl_nil, gt_iff_lt, List.all_cons, List.all_nil, Bool.and_true,
+      decide_eq_true_eq, List.length_singleton]
+    conv at probabilities_sum_to_one =>
+      lhs
+      change 0 + head
+    rw [Rat.zero_add] at probabilities_sum_to_one
+    exact probabilities_sum_to_one
+
+theorem MixedStrategy.is_pure_100_percent' :
+  (m: MixedStrategy A)
+    → (pure: m.isPure)
+      → m.probabilities = [1] := by
+  intro m pure
+  have first := m.is_pure_100_percent pure
+  unfold MixedStrategy.isPure at pure
+  rw [m.same_length] at pure
+  obtain ⟨strategies, probabilities, probabilities_sum_to_one, probabilities_non_negative, same_length⟩ := m
+  simp_all only
+  cases probabilities
+  case nil =>
+    tauto
+  case cons head tail _ =>
+    simp_all only [List.cons.injEq]
+    constructor
+    case left => exact first
+    case right => simp_all only [List.length_cons, add_left_eq_self, List.length_eq_zero]
+
+theorem PureStrategy.asMixed_isPure : (ps: PureStrategy L) → ps.asMixed.isPure := by
+  intro ps
+  unfold PureStrategy.asMixed MixedStrategy.isPure
+  simp_all only [List.length_singleton]
+
+theorem PureStrategy.asMixed_asPure_eq_self : (ps: PureStrategy L) → ps.asMixed.asPure (by rfl) = ps := by
+  intro ps
+  unfold PureStrategy.asMixed MixedStrategy.asPure
+  simp_all only [List.getElem_cons_zero]
 
 -- a PureStrategyProfile is a list of PureStrategy (for type reasons, we need to use a function)
 @[aesop safe [constructors, cases]]
@@ -107,6 +161,19 @@ instance UtilityProfile.add : Add (UtilityProfile L) where
       simp_all only
       rw [← same_length_1, ← same_length_2]
       simp_all only [min_self]
+    let up : UtilityProfile L := ⟨utilities, same_length⟩
+    exact up
+
+instance UtilityProfile.mul : HMul Rat (UtilityProfile L) (UtilityProfile L) where
+  hMul x y := by
+    let utilities : List Rat := List.map
+      (λ u => u * x)
+      y.utilities
+    let same_length : L.length = utilities.length := by
+      unfold utilities
+      simp_all only [List.length_map]
+      obtain ⟨utilities_1, same_length⟩ := y
+      simp_all only
     let up : UtilityProfile L := ⟨utilities, same_length⟩
     exact up
 
@@ -387,19 +454,6 @@ theorem UtilityProfile.index_nat_lt_add_left_cancel (a b c : UtilityProfile L) (
   symm at same_length_1 same_length_2
   exact index_lt_list_zipWith_left_cancel utilities_1 utilities_2 utilities ⟨i, i_Lt⟩ same_length_1 same_length_2 a_lt_b
 
-instance UtilityProfile.mul : HMul Rat (UtilityProfile L) (UtilityProfile L) where
-  hMul x y := by
-    let utilities : List Rat := List.map
-      (λ u => u * x)
-      y.utilities
-    let same_length : L.length = utilities.length := by
-      unfold utilities
-      simp_all only [List.length_map]
-      obtain ⟨utilities_1, same_length⟩ := y
-      simp_all only
-    let up : UtilityProfile L := ⟨utilities, same_length⟩
-    exact up
-
 def zero_utility_profile (L: List Type) : UtilityProfile L := by
   let utilities : List Rat := List.map (λ _ => 0) L
   let same_length : L.length = utilities.length := by
@@ -407,7 +461,7 @@ def zero_utility_profile (L: List Type) : UtilityProfile L := by
   let up : UtilityProfile L := ⟨utilities, same_length⟩
   exact up
 
-def list_zipWith_zero_list (a b : List ℚ) (len: a.length = b.length)
+theorem list_zipWith_zero_list (a b : List ℚ) (len: a.length = b.length)
     (b_0: b = (List.map (fun x ↦ 0) a)) :
     List.zipWith (· + ·) b a = a := by
   induction a generalizing b with
@@ -419,12 +473,10 @@ def list_zipWith_zero_list (a b : List ℚ) (len: a.length = b.length)
     simp_all only [List.length_cons, List.map_cons, List.length_map, List.zipWith_cons_cons, zero_add,
       List.cons.injEq, true_and]
     apply ih
-    on_goal 2 => {rfl
-    }
+    on_goal 2 => rfl
     · simp_all only [List.length_map]
 
-def zero_util_lists_eq (len: a_list.length = b_list.length) : List.map (fun _ ↦ Rat.mk' 0 1) a_list = List.map (fun _ ↦ Rat.mk' 0 1) b_list := by
-    simp only [Rat.mk_den_one, Int.cast_zero]
+theorem zero_util_lists_eq (len: a_list.length = b_list.length) : List.map (fun _ ↦ (0: ℚ)) a_list = List.map (fun _ ↦ (0: ℚ)) b_list := by
     induction b_list <;> induction a_list
     case nil.nil => simp_all only [List.length_nil, List.length_eq_zero, List.map_nil]
     case nil.cons => simp_all only [List.length_nil, List.length_eq_zero, List.map_nil,
@@ -441,7 +493,7 @@ termination_by a_list.length
 decreasing_by simp_all only [Rat.mk_den_one, Int.cast_zero, List.length_cons, List.map_cons,
   add_right_eq_self, one_ne_zero, false_implies, add_left_inj, lt_add_iff_pos_right, zero_lt_one]
 
-def UtilityProfile.zero_add : zero_utility_profile L + up = up := by
+theorem UtilityProfile.zero_add : zero_utility_profile L + up = up := by
   obtain ⟨utilities, same_length⟩ := up
   symm at same_length
   have z_length : utilities.length = (zero_utility_profile L).utilities.length := by
@@ -449,7 +501,26 @@ def UtilityProfile.zero_add : zero_utility_profile L + up = up := by
     exact same_length
   unfold zero_utility_profile UtilityProfile.add HAdd.hAdd instHAdd Add.add
   simp_all only [mk.injEq]
-  exact list_zipWith_zero_list utilities (List.map (fun _ ↦ Rat.mk' 0 1) L) z_length (by exact zero_util_lists_eq same_length)
+  exact list_zipWith_zero_list utilities (List.map (fun _ ↦ (0: ℚ)) L) z_length (by exact zero_util_lists_eq same_length)
+
+theorem map_mul_one (rat_list: List ℚ) : List.map (fun u ↦ u.mul 1) rat_list = rat_list := by
+  induction rat_list
+  case nil =>
+    simp only [List.map_nil]
+  case cons head tail tail_ih =>
+    simp_all only [List.map_cons, List.cons.injEq, and_true]
+    conv =>
+      lhs
+      change head * 1
+    simp only [mul_one]
+
+theorem UtilityProfile.one_mul (up: UtilityProfile L) : (1: ℚ) * up = up := by
+  unfold UtilityProfile.mul HMul.hMul instHMul Mul.mul
+  obtain ⟨utilities, same_length⟩ := up
+  simp_all only [mk.injEq]
+  unfold Rat.instMul
+  simp_all only
+  exact map_mul_one utilities
 
 -- eval_sp automatically converts a pure strategy utility function to a mixed strategy utility function
 def mixed_function_from_pure (S: MixedStrategyProfile L) (PSUF: PureStrategyProfile L → UtilityProfile L) (acc: PureStrategyProfile L) (id: Fin L.length) : UtilityProfile L := by
@@ -519,7 +590,12 @@ def mixed_function_from_pure (S: MixedStrategyProfile L) (PSUF: PureStrategyProf
       )
 termination_by L.length - id
 
-def pure_mixed_function_is_pure : (msp: MixedStrategyProfile L) → (pure: msp.isPure) → (mixed_function_from_pure msp psuf acc ⟨0, l⟩ = psuf (msp.asPure pure)) := by
+theorem psuf_to_psuf (psuf: PureStrategyProfile L → UtilityProfile L) : a = b → psuf a = psuf b := by
+  intro a_1
+  subst a_1
+  simp_all only
+
+theorem pure_mixed_function_is_pure : (msp: MixedStrategyProfile L) → (pure: msp.isPure) → (mixed_function_from_pure msp psuf acc ⟨0, l⟩ = psuf (msp.asPure pure)) := by
   intro msp pure
   unfold mixed_function_from_pure
   cases L
@@ -536,16 +612,43 @@ def pure_mixed_function_is_pure : (msp: MixedStrategyProfile L) → (pure: msp.i
         arg 3
         arg 2
         equals [((msp.strategies ⟨0, l⟩).asPure (pure ⟨0, l⟩), 1)] =>
-          sorry
+          simp_all only [List.length_cons, Fin.zero_eta, List.get_eq_getElem, Fin.val_zero, List.getElem_cons_zero]
+          refine Eq.symm (List.zip_of_prod ?hl ?hr)
+          all_goals simp_all only [List.map_cons, List.map_nil]
+          case hl =>
+            unfold MixedStrategy.asPure
+            let x : Fin (tail.length + 1) := 0
+            exact Eq.symm (List.eq_of_length_one (msp.strategies x).strategies (pure x))
+          case hr =>
+            unfold MixedStrategyProfile.isPure MixedStrategy.isPure at pure
+            specialize pure ⟨0, by exact l⟩
+            simp_all only [List.length_cons, Fin.zero_eta, List.get_eq_getElem, Fin.val_zero,
+              List.getElem_cons_zero]
+            let x : Fin (tail.length + 1) := 0
+            exact Eq.symm (MixedStrategy.is_pure_100_percent' (msp.strategies x) pure)
       unfold MixedStrategyProfile.asPure MixedStrategy.asPure
       unfold MixedStrategyProfile.isPure MixedStrategy.isPure at pure
       simp only [List.length_cons, List.get_eq_getElem]
       specialize pure ⟨0, l⟩
       simp_all only [List.length_cons, Fin.zero_eta, List.get_eq_getElem, Fin.val_zero, List.getElem_cons_zero,
         List.map_cons, List.map_nil, List.foldl_cons, List.foldl_nil]
-      rw [UtilityProfile.zero_add]
+      rw [UtilityProfile.zero_add, UtilityProfile.one_mul]
+      apply psuf_to_psuf
+      simp_all only [PureStrategyProfile.mk.injEq, List.length_cons, List.get_eq_getElem]
+      obtain ⟨strategies⟩ := msp
+      simp_all only
+      obtain ⟨acc_strategies⟩ := acc
+      simp_all only
+      refine funext ?_
+      intro x
+      split
+      next h_1 =>
+        subst h_1
+        simp_all only [Fin.val_zero, List.getElem_cons_zero, cast_eq]
+      next h_1 =>
+        sorry
+    next h =>
       sorry
-    next h => sorry
 
 -- a UtilityFunction is a function that takes a StrategyProfile and returns a Utility
 @[aesop safe [constructors, cases]]
@@ -774,8 +877,8 @@ theorem dbt_trans: DoesBetterThan L G S S' delta → DoesBetterThan L G S' S'' d
   exact gt_trans ss' s's''
 
 @[simp]
-theorem finite_nasheq_exists: GameFinite L → ∃ (S: MixedStrategyProfile L), NashEquilibrium L G S
-  := by sorry -- we need to use a fixed point theorem here :p
+theorem finite_nasheq_exists: GameFinite L → ∃ (S: MixedStrategyProfile L), NashEquilibrium L G S := by
+  sorry
 
 @[simp]
 theorem not_nasheq_if_uc_better: UnilateralChange L A B i ∧ ¬DoesAtLeastAsWellAs L G B A i → ¬NashEquilibrium L G B := by
@@ -850,48 +953,67 @@ theorem all_ucs_worse_is_nash_eq:
 inductive PrisonersDilemmaStrategies where
 | silent
 | confess
-deriving BEq, DecidableEq
+deriving BEq, DecidableEq, Fintype
 
 @[aesop norm unfold]
 def PL : List Type := [PrisonersDilemmaStrategies, PrisonersDilemmaStrategies]
 
-def PL_length : List.length PL = 2 := rfl
+theorem PL_length : List.length PL = 2 := rfl
+
+theorem PL_symmetric : GameSymmetric PL := by
+  unfold GameSymmetric PL
+  simp only [List.chain'_cons, List.chain'_singleton, and_self]
+
+theorem PL_finite : GameFinite PL := by
+  unfold GameFinite PL
+  simp only [List.Forall, and_self]
+  exact Finite.of_fintype PrisonersDilemmaStrategies
 
 @[aesop norm unfold]
 def PrisonersDilemmaUtilityFunction : UtilityFunction PL :=
-  ⟨λ S => match (S.strategies (Fin.ofNat 0)).val, (S.strategies (Fin.ofNat 1)).val with
-          | PrisonersDilemmaStrategies.silent,  PrisonersDilemmaStrategies.silent  => { utilities := [3, 3], same_length := rfl }
-          | PrisonersDilemmaStrategies.silent,  PrisonersDilemmaStrategies.confess => { utilities := [1, 4], same_length := rfl }
-          | PrisonersDilemmaStrategies.confess, PrisonersDilemmaStrategies.silent  => { utilities := [4, 1], same_length := rfl }
-          | PrisonersDilemmaStrategies.confess, PrisonersDilemmaStrategies.confess => { utilities := [2, 2], same_length := rfl }
+  ⟨
+    λ S =>
+      match (S.strategies (Fin.ofNat 0)).val, (S.strategies (Fin.ofNat 1)).val with
+      | PrisonersDilemmaStrategies.silent,  PrisonersDilemmaStrategies.silent  => { utilities := [3, 3], same_length := rfl }
+      | PrisonersDilemmaStrategies.silent,  PrisonersDilemmaStrategies.confess => { utilities := [1, 4], same_length := rfl }
+      | PrisonersDilemmaStrategies.confess, PrisonersDilemmaStrategies.silent  => { utilities := [4, 1], same_length := rfl }
+      | PrisonersDilemmaStrategies.confess, PrisonersDilemmaStrategies.confess => { utilities := [2, 2], same_length := rfl }
   ⟩
 
 @[aesop norm unfold]
 def PrisonersDilemmaPureProfile : PureStrategyProfile PL :=
-  { strategies := λ i => match i with
-                          | ⟨0, _⟩ => ⟨PrisonersDilemmaStrategies.silent⟩
-                          | ⟨1, _⟩ => ⟨PrisonersDilemmaStrategies.silent⟩
+  {
+    strategies := λ i =>
+      match i with
+      | ⟨0, _⟩ => ⟨PrisonersDilemmaStrategies.silent⟩
+      | ⟨1, _⟩ => ⟨PrisonersDilemmaStrategies.silent⟩
   }
 
 @[aesop norm unfold]
 def PrisonersDilemmaSilentSilentProfile : MixedStrategyProfile PL :=
-  { strategies := λ i => match i with
-                          | ⟨0, _⟩ => PureStrategy.asMixed ⟨PrisonersDilemmaStrategies.silent⟩
-                          | ⟨1, _⟩ => PureStrategy.asMixed ⟨PrisonersDilemmaStrategies.silent⟩
+  {
+    strategies := λ i =>
+      match i with
+      | ⟨0, _⟩ => PureStrategy.asMixed ⟨PrisonersDilemmaStrategies.silent⟩
+      | ⟨1, _⟩ => PureStrategy.asMixed ⟨PrisonersDilemmaStrategies.silent⟩
   }
 
 @[aesop norm unfold]
 def PrisonersDilemmaSilentConfessProfile : MixedStrategyProfile PL :=
-  { strategies := λ i => match i with
-                          | ⟨0, _⟩ => PureStrategy.asMixed ⟨PrisonersDilemmaStrategies.silent⟩
-                          | ⟨1, _⟩ => PureStrategy.asMixed ⟨PrisonersDilemmaStrategies.confess⟩
+  {
+    strategies := λ i =>
+      match i with
+      | ⟨0, _⟩ => PureStrategy.asMixed ⟨PrisonersDilemmaStrategies.silent⟩
+      | ⟨1, _⟩ => PureStrategy.asMixed ⟨PrisonersDilemmaStrategies.confess⟩
   }
 
 @[aesop norm unfold]
 def PrisonersDilemmaConfessConfessProfile : MixedStrategyProfile PL :=
-  { strategies := λ i => match i with
-                          | ⟨0, _⟩ => PureStrategy.asMixed ⟨PrisonersDilemmaStrategies.confess⟩
-                          | ⟨1, _⟩ => PureStrategy.asMixed ⟨PrisonersDilemmaStrategies.confess⟩
+  {
+    strategies := λ i =>
+      match i with
+      | ⟨0, _⟩ => PureStrategy.asMixed ⟨PrisonersDilemmaStrategies.confess⟩
+      | ⟨1, _⟩ => PureStrategy.asMixed ⟨PrisonersDilemmaStrategies.confess⟩
   }
 
 @[aesop norm unfold]
@@ -908,19 +1030,22 @@ theorem PDSilentConfessIsUnilateralOfPDSilentSilent : UnilateralChange PL Prison
   cases i
   case mk val isLt =>
     cases val
-    case zero =>  left
-                  unfold PrisonersDilemmaSilentSilentProfile
-                  unfold PrisonersDilemmaSilentConfessProfile
-                  simp_all
+    case zero =>
+      left
+      unfold PrisonersDilemmaSilentSilentProfile
+      unfold PrisonersDilemmaSilentConfessProfile
+      simp_all
     case succ n =>
       cases n
-      case zero =>  right
-                    simp_all
-      case succ m =>  rw [PL_length] at isLt
-                      conv at isLt => lhs
-                                      change m + 2
-                                      rw [add_comm]
-                      simp only [add_lt_iff_neg_left, not_lt_zero'] at isLt
+      case zero =>
+        right
+        simp only [Fin.mk_one, zero_add, List.elem_eq_mem, List.mem_singleton, decide_True]
+      case succ m =>
+        rw [PL_length] at isLt
+        conv at isLt => lhs
+                        change m + 2
+                        rw [add_comm]
+        simp only [add_lt_iff_neg_left, not_lt_zero'] at isLt
 
 theorem NotNashEquilibriumSilentSilent : ¬ NashEquilibrium PL PrisonersDilemmaGame PrisonersDilemmaSilentSilentProfile := by
   apply not_nasheq_if_uc_better
@@ -930,17 +1055,18 @@ theorem NotNashEquilibriumSilentSilent : ¬ NashEquilibrium PL PrisonersDilemmaG
   case a =>
     constructor
     case left => exact PDSilentConfessIsUnilateralOfPDSilentSilent
-    case right => unfold PL PrisonersDilemmaGame PrisonersDilemmaSilentSilentProfile
-                    PrisonersDilemmaSilentConfessProfile PrisonersDilemmaPureProfile PrisonersDilemmaUtilityFunction
-                    DoesAtLeastAsWellAs Game.play UtilityFunction.apply mixed_function_from_pure PureStrategy.asMixed
-                  simp_all [↓dreduceDIte]
-                  unfold mixed_function_from_pure UtilityProfile.mul
-                  simp_all [↓reduceDIte]
-                  apply UtilityProfile.index_nat_lt_add_left_cancel _ _ (zero_utility_profile [PrisonersDilemmaStrategies, PrisonersDilemmaStrategies]) 1 (by simp_all)
-                  simp_all only
-                  apply UtilityProfile.index_nat_lt_add_left_cancel _ _ (zero_utility_profile [PrisonersDilemmaStrategies, PrisonersDilemmaStrategies]) 1 (by simp_all)
-                  simp_all only [List.getElem_cons_succ, List.getElem_cons_zero]
-                  rfl
+    case right =>
+      unfold PL PrisonersDilemmaGame PrisonersDilemmaSilentSilentProfile
+        PrisonersDilemmaSilentConfessProfile PrisonersDilemmaPureProfile PrisonersDilemmaUtilityFunction
+        DoesAtLeastAsWellAs Game.play UtilityFunction.apply mixed_function_from_pure PureStrategy.asMixed
+      simp_all [↓dreduceDIte]
+      unfold mixed_function_from_pure UtilityProfile.mul
+      simp_all [↓reduceDIte]
+      apply UtilityProfile.index_nat_lt_add_left_cancel _ _ (zero_utility_profile [PrisonersDilemmaStrategies, PrisonersDilemmaStrategies]) 1 (by simp_all)
+      simp_all only
+      apply UtilityProfile.index_nat_lt_add_left_cancel _ _ (zero_utility_profile [PrisonersDilemmaStrategies, PrisonersDilemmaStrategies]) 1 (by simp_all)
+      simp_all only [List.getElem_cons_succ, List.getElem_cons_zero]
+      rfl
 
 theorem ConfessConfessDALAWAChangedOne :
     ∀ m: MixedStrategy PrisonersDilemmaStrategies,
@@ -981,19 +1107,21 @@ inductive RockPaperScissorsStrategies where
 | scissors
 
 def RPS : List Type := [RockPaperScissorsStrategies, RockPaperScissorsStrategies]
-def RPS_length : List.length RPS = 2 := rfl
+theorem RPS_length : List.length RPS = 2 := rfl
 
 def RockPaperScissorsUtilityFunction : UtilityFunction RPS :=
-  ⟨λ S => match (S.strategies (Fin.ofNat 0)).val, (S.strategies (Fin.ofNat 1)).val with
-          | RockPaperScissorsStrategies.rock,     RockPaperScissorsStrategies.rock     => { utilities := [1, 1], same_length := rfl }
-          | RockPaperScissorsStrategies.rock,     RockPaperScissorsStrategies.paper    => { utilities := [0, 2], same_length := rfl }
-          | RockPaperScissorsStrategies.rock,     RockPaperScissorsStrategies.scissors => { utilities := [2, 0], same_length := rfl }
-          | RockPaperScissorsStrategies.paper,    RockPaperScissorsStrategies.rock     => { utilities := [2, 0], same_length := rfl }
-          | RockPaperScissorsStrategies.paper,    RockPaperScissorsStrategies.paper    => { utilities := [1, 1], same_length := rfl }
-          | RockPaperScissorsStrategies.paper,    RockPaperScissorsStrategies.scissors => { utilities := [0, 2], same_length := rfl }
-          | RockPaperScissorsStrategies.scissors, RockPaperScissorsStrategies.rock     => { utilities := [0, 2], same_length := rfl }
-          | RockPaperScissorsStrategies.scissors, RockPaperScissorsStrategies.paper    => { utilities := [2, 0], same_length := rfl }
-          | RockPaperScissorsStrategies.scissors, RockPaperScissorsStrategies.scissors => { utilities := [1, 1], same_length := rfl }
+  ⟨
+    λ S =>
+      match (S.strategies (Fin.ofNat 0)).val, (S.strategies (Fin.ofNat 1)).val with
+      | RockPaperScissorsStrategies.rock,     RockPaperScissorsStrategies.rock     => { utilities := [1, 1], same_length := rfl }
+      | RockPaperScissorsStrategies.rock,     RockPaperScissorsStrategies.paper    => { utilities := [0, 2], same_length := rfl }
+      | RockPaperScissorsStrategies.rock,     RockPaperScissorsStrategies.scissors => { utilities := [2, 0], same_length := rfl }
+      | RockPaperScissorsStrategies.paper,    RockPaperScissorsStrategies.rock     => { utilities := [2, 0], same_length := rfl }
+      | RockPaperScissorsStrategies.paper,    RockPaperScissorsStrategies.paper    => { utilities := [1, 1], same_length := rfl }
+      | RockPaperScissorsStrategies.paper,    RockPaperScissorsStrategies.scissors => { utilities := [0, 2], same_length := rfl }
+      | RockPaperScissorsStrategies.scissors, RockPaperScissorsStrategies.rock     => { utilities := [0, 2], same_length := rfl }
+      | RockPaperScissorsStrategies.scissors, RockPaperScissorsStrategies.paper    => { utilities := [2, 0], same_length := rfl }
+      | RockPaperScissorsStrategies.scissors, RockPaperScissorsStrategies.scissors => { utilities := [1, 1], same_length := rfl }
   ⟩
 
 def RPSPureProfile : PureStrategyProfile RPS :=
