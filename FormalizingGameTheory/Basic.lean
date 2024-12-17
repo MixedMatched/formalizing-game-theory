@@ -646,8 +646,37 @@ theorem pure_mixed_function_is_pure : (msp: MixedStrategyProfile L) → (pure: m
         subst h_1
         simp_all only [Fin.val_zero, List.getElem_cons_zero, cast_eq]
       next h_1 =>
-        sorry
+        have tl1 : tail.length + 1 = 1 := by
+          simp_all only [List.length_cons, lt_add_iff_pos_left, add_pos_iff, zero_lt_one, or_true,
+            List.get_eq_getElem, add_left_eq_self, List.length_eq_zero]
+          refine List.length_eq_zero.mp ?_
+          exact Fin.last_eq_zero_iff.mp h
+        contrapose! h_1
+        simp only [Decidable.not_not]
+        omega
     next h =>
+      conv =>
+        lhs
+        arg 3
+        arg 2
+        equals [((msp.strategies ⟨0, l⟩).asPure (pure ⟨0, l⟩), 1)] =>
+          simp_all only [List.length_cons, Fin.zero_eta, List.get_eq_getElem, Fin.val_zero, List.getElem_cons_zero]
+          refine Eq.symm (List.zip_of_prod ?hl ?hr)
+          all_goals simp_all only [List.map_cons, List.map_nil]
+          case hl =>
+            unfold MixedStrategy.asPure
+            let x : Fin (tail.length + 1) := 0
+            exact Eq.symm (List.eq_of_length_one (msp.strategies x).strategies (pure x))
+          case hr =>
+            unfold MixedStrategyProfile.isPure MixedStrategy.isPure at pure
+            specialize pure ⟨0, by exact l⟩
+            simp_all only [List.length_cons, Fin.zero_eta, List.get_eq_getElem, Fin.val_zero,
+              List.getElem_cons_zero]
+            let x : Fin (tail.length + 1) := 0
+            exact Eq.symm (MixedStrategy.is_pure_100_percent' (msp.strategies x) pure)
+      unfold MixedStrategyProfile.isPure MixedStrategy.isPure at pure
+      simp_all
+      rw [UtilityProfile.zero_add, UtilityProfile.one_mul]
       sorry
 
 -- a UtilityFunction is a function that takes a StrategyProfile and returns a Utility
@@ -832,9 +861,7 @@ theorem uc_comm: ∀ (S': MixedStrategyProfile L) (_: UnilateralChange L S S' de
   exact nchange_comm S' og
 
 @[simp]
-theorem uc_self: UnilateralChange L S S delta := by
-  unfold UnilateralChange
-  exact nchange_self
+theorem uc_self: UnilateralChange L S S delta := nchange_self
 
 @[simp]
 theorem uc_trans: UnilateralChange L S S' delta1 → UnilateralChange L S' S'' delta2 → NChange L S S'' [delta1, delta2] := by
@@ -1027,25 +1054,23 @@ def PrisonersDilemmaGame : Game PL :=
 theorem PDSilentConfessIsUnilateralOfPDSilentSilent : UnilateralChange PL PrisonersDilemmaSilentConfessProfile PrisonersDilemmaSilentSilentProfile (Fin.mk 1 x) := by
   unfold UnilateralChange
   intro i
-  cases i
-  case mk val isLt =>
-    cases val
-    case zero =>
-      left
-      unfold PrisonersDilemmaSilentSilentProfile
-      unfold PrisonersDilemmaSilentConfessProfile
-      simp_all
-    case succ n =>
-      cases n
-      case zero =>
-        right
-        simp only [Fin.mk_one, zero_add, List.elem_eq_mem, List.mem_singleton, decide_True]
-      case succ m =>
-        rw [PL_length] at isLt
-        conv at isLt => lhs
-                        change m + 2
-                        rw [add_comm]
-        simp only [add_lt_iff_neg_left, not_lt_zero'] at isLt
+  match i with
+  | ⟨0, _⟩ =>
+    left
+    unfold PrisonersDilemmaSilentSilentProfile
+    unfold PrisonersDilemmaSilentConfessProfile
+    simp only [Fin.zero_eta, List.get_eq_getElem, Fin.val_zero]
+  | ⟨1, _⟩ =>
+    right
+    simp only [Fin.mk_one, Fin.isValue, List.elem_eq_mem, List.mem_singleton, decide_True]
+  | ⟨Nat.succ (Nat.succ n), l⟩ =>
+    rw [PL_length] at l
+    simp only [Nat.succ_eq_add_one] at l
+    conv at l =>
+      lhs
+      change n + 2
+      rw [add_comm]
+    simp only [add_lt_iff_neg_left, not_lt_zero'] at l
 
 theorem NotNashEquilibriumSilentSilent : ¬ NashEquilibrium PL PrisonersDilemmaGame PrisonersDilemmaSilentSilentProfile := by
   apply not_nasheq_if_uc_better
