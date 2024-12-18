@@ -595,89 +595,37 @@ theorem psuf_to_psuf (psuf: PureStrategyProfile L → UtilityProfile L) : a = b 
   subst a_1
   simp_all only
 
-theorem pure_mixed_function_is_pure : (msp: MixedStrategyProfile L) → (pure: msp.isPure) → (mixed_function_from_pure msp psuf acc ⟨0, l⟩ = psuf (msp.asPure pure)) := by
-  intro msp pure
-  unfold mixed_function_from_pure
-  cases L
-  case nil =>
-    exfalso
-    simp_all only [List.length_nil, lt_self_iff_false]
-  case cons head tail =>
-    unfold UtilityProfile.add
-    simp_all
-    split
-    next h =>
-      conv =>
-        lhs
-        arg 3
-        arg 2
-        equals [((msp.strategies ⟨0, l⟩).asPure (pure ⟨0, l⟩), 1)] =>
-          simp_all only [List.length_cons, Fin.zero_eta, List.get_eq_getElem, Fin.val_zero, List.getElem_cons_zero]
-          refine Eq.symm (List.zip_of_prod ?hl ?hr)
-          all_goals simp_all only [List.map_cons, List.map_nil]
-          case hl =>
-            unfold MixedStrategy.asPure
-            let x : Fin (tail.length + 1) := 0
-            exact Eq.symm (List.eq_of_length_one (msp.strategies x).strategies (pure x))
-          case hr =>
-            unfold MixedStrategyProfile.isPure MixedStrategy.isPure at pure
-            specialize pure ⟨0, by exact l⟩
-            simp_all only [List.length_cons, Fin.zero_eta, List.get_eq_getElem, Fin.val_zero,
-              List.getElem_cons_zero]
-            let x : Fin (tail.length + 1) := 0
-            exact Eq.symm (MixedStrategy.is_pure_100_percent' (msp.strategies x) pure)
-      unfold MixedStrategyProfile.asPure MixedStrategy.asPure
-      unfold MixedStrategyProfile.isPure MixedStrategy.isPure at pure
-      simp only [List.length_cons, List.get_eq_getElem]
-      specialize pure ⟨0, l⟩
-      simp_all only [List.length_cons, Fin.zero_eta, List.get_eq_getElem, Fin.val_zero, List.getElem_cons_zero,
-        List.map_cons, List.map_nil, List.foldl_cons, List.foldl_nil]
-      rw [UtilityProfile.zero_add, UtilityProfile.one_mul]
-      apply psuf_to_psuf
-      simp_all only [PureStrategyProfile.mk.injEq, List.length_cons, List.get_eq_getElem]
+theorem pure_mixed_function_is_pure : (msp: MixedStrategyProfile L) → (pure: msp.isPure) → (∀ n : Fin L.length, n < i → acc.strategies n = (msp.strategies n).asPure (by exact pure n)) → (mixed_function_from_pure msp psuf acc i = psuf (msp.asPure pure)) := by
+  intro msp pure acc_valid
+  cases i
+  case mk val isLt =>
+    induction val generalizing acc
+    case zero =>
+      sorry
+    case succ n a =>
+      have isLtn : n < L.length := by omega
+      have curr : (∀ n_1 < ⟨n, isLtn⟩, acc.strategies n_1 = (msp.strategies n_1).asPure (pure n_1)) := by
+        intro n_1 n_1Lt
+        have rev : n_1 < ⟨n + 1, isLt⟩ := Fin.lt_trans n_1Lt (by exact Set.Ici_subset_Ioi.mp fun ⦃a⦄ a ↦ a)
+        specialize acc_valid n_1 rev
+        exact acc_valid
+      specialize a isLtn curr
+      rw [← a]
+      unfold mixed_function_from_pure UtilityProfile.add
+      simp_all
       obtain ⟨strategies⟩ := msp
       simp_all only
-      obtain ⟨acc_strategies⟩ := acc
+      obtain ⟨strategies_1⟩ := acc
       simp_all only
-      refine funext ?_
-      intro x
       split
-      next h_1 =>
-        subst h_1
-        simp_all only [Fin.val_zero, List.getElem_cons_zero, cast_eq]
-      next h_1 =>
-        have tl1 : tail.length + 1 = 1 := by
-          simp_all only [List.length_cons, lt_add_iff_pos_left, add_pos_iff, zero_lt_one, or_true,
-            List.get_eq_getElem, add_left_eq_self, List.length_eq_zero]
-          refine List.length_eq_zero.mp ?_
-          exact Fin.last_eq_zero_iff.mp h
-        contrapose! h_1
-        simp only [Decidable.not_not]
-        omega
-    next h =>
-      conv =>
-        lhs
-        arg 3
-        arg 2
-        equals [((msp.strategies ⟨0, l⟩).asPure (pure ⟨0, l⟩), 1)] =>
-          simp_all only [List.length_cons, Fin.zero_eta, List.get_eq_getElem, Fin.val_zero, List.getElem_cons_zero]
-          refine Eq.symm (List.zip_of_prod ?hl ?hr)
-          all_goals simp_all only [List.map_cons, List.map_nil]
-          case hl =>
-            unfold MixedStrategy.asPure
-            let x : Fin (tail.length + 1) := 0
-            exact Eq.symm (List.eq_of_length_one (msp.strategies x).strategies (pure x))
-          case hr =>
-            unfold MixedStrategyProfile.isPure MixedStrategy.isPure at pure
-            specialize pure ⟨0, by exact l⟩
-            simp_all only [List.length_cons, Fin.zero_eta, List.get_eq_getElem, Fin.val_zero,
-              List.getElem_cons_zero]
-            let x : Fin (tail.length + 1) := 0
-            exact Eq.symm (MixedStrategy.is_pure_100_percent' (msp.strategies x) pure)
-      unfold MixedStrategyProfile.isPure MixedStrategy.isPure at pure
-      simp_all
-      rw [UtilityProfile.zero_add, UtilityProfile.one_mul]
-      sorry
+      next h =>
+        split
+        next h_1 => sorry
+        next h_1 => sorry
+      next h =>
+        split
+        next h_1 => sorry
+        next h_1 => sorry
 
 -- a UtilityFunction is a function that takes a StrategyProfile and returns a Utility
 @[aesop safe [constructors, cases]]
@@ -695,7 +643,7 @@ def UtilityFunction.apply : UtilityFunction L → L.length > 0 → PureStrategyP
 def UtilityFunction.apply_of_pure_eq_pure_apply : (uf: UtilityFunction L) → (msp: MixedStrategyProfile L) → (pure: msp.isPure) → (uf.apply alop psp msp = uf.pure_apply (msp.asPure pure)) := by
   intro uf msp pure
   unfold UtilityFunction.apply UtilityFunction.pure_apply
-  exact pure_mixed_function_is_pure msp pure
+  exact pure_mixed_function_is_pure msp pure (by intro n n_lt_0; tauto)
 
 -- a Game is a number of players, a list of strategies for each player, and a utility function
 @[aesop safe [constructors, cases]]
