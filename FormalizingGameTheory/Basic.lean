@@ -6,7 +6,7 @@ import Aesop
 
 -- a PureStrategy is an instance of the strategy type
 @[aesop safe [constructors, cases]]
-structure PureStrategy (A : Type) := (val : A)
+structure PureStrategy (A : Type) where (val : A)
 
 def PureStrategy.cast : PureStrategy A → A = M → PureStrategy M := by
   intro PS_A A_eq_M
@@ -15,7 +15,7 @@ def PureStrategy.cast : PureStrategy A → A = M → PureStrategy M := by
 
 -- a MixedStrategy is a probability distribution over PureStrategies
 @[aesop safe [constructors, cases]]
-structure MixedStrategy (A : Type) :=
+structure MixedStrategy (A : Type) where
   (strategies: List (PureStrategy A))
   (probabilities: List Rat)
   (probabilities_sum_to_one: List.foldl Rat.add 0 probabilities = 1)
@@ -30,7 +30,7 @@ def PureStrategy.asMixed : PureStrategy A → MixedStrategy A :=
       probabilities_sum_to_one := by
         simp_all only [List.foldl_cons, List.foldl_nil, Rat.add, Rat.den_ofNat, Nat.gcd_self, ↓reduceDIte, Rat.num_ofNat, Nat.cast_one,
           mul_one, zero_add, Rat.mk_den_one, Int.cast_one]
-      probabilities_non_negative := by simp_all only [gt_iff_lt, List.all_cons, zero_lt_one, decide_True, List.all_nil, Bool.and_self]
+      probabilities_non_negative := by simp_all only [gt_iff_lt, List.all_cons, zero_lt_one, decide_true, List.all_nil, Bool.and_self]
       same_length := by simp_all only [List.length_singleton]
     }
 
@@ -462,12 +462,12 @@ def zero_utility_profile (L: List Type) : UtilityProfile L := by
   exact up
 
 theorem list_zipWith_zero_list (a b : List ℚ) (len: a.length = b.length)
-    (b_0: b = (List.map (fun x ↦ 0) a)) :
+    (b_0: b = (List.map (fun _ ↦ 0) a)) :
     List.zipWith (· + ·) b a = a := by
   induction a generalizing b with
   | nil =>
     revert len
-    simp_all only [List.map_nil, List.length_nil, List.zipWith_same, imp_self]
+    simp_all only [List.map_nil, List.length_nil, List.zipWith_self, imp_self]
   | cons a as ih =>
     subst b_0
     simp_all only [List.length_cons, List.map_cons, List.length_map, List.zipWith_cons_cons, zero_add,
@@ -788,10 +788,10 @@ theorem nchange_split: NChange L S S'' (deltas1 ++ deltas2) → ∃ (S': MixedSt
         by_cases hdelta : deltas2.contains i
         case pos =>
           simp_all only [List.elem_eq_mem, List.mem_append, Bool.decide_or, Bool.or_eq_true, decide_eq_true_eq,
-            List.get_eq_getElem, decide_True, ↓reduceIte, or_true]
+            List.get_eq_getElem, decide_true, ↓reduceIte, or_true]
         case neg =>
           simp_all only [List.elem_eq_mem, List.mem_append, Bool.decide_or, Bool.or_eq_true, decide_eq_true_eq,
-            List.get_eq_getElem, decide_False, Bool.false_eq_true, ↓reduceIte, or_false]
+            List.get_eq_getElem, decide_false, Bool.false_eq_true, ↓reduceIte, or_false]
 
 @[simp]
 theorem eventually_nchange: ∃ (deltas: List (Fin (List.length L))), NChange L S S' deltas := by
@@ -800,7 +800,7 @@ theorem eventually_nchange: ∃ (deltas: List (Fin (List.length L))), NChange L 
   use deltas
   intro i
   right
-  simp_all only [List.elem_eq_mem, List.mem_finRange, decide_True, deltas]
+  simp_all only [List.elem_eq_mem, List.mem_finRange, decide_true, deltas]
 
 @[simp]
 theorem uc_comm: ∀ (S': MixedStrategyProfile L) (_: UnilateralChange L S S' delta), UnilateralChange L S' S delta := by
@@ -869,6 +869,7 @@ theorem not_nasheq_if_uc_better: UnilateralChange L A B i ∧ ¬DoesAtLeastAsWel
     := by apply And.right at h
           unfold DoesAtLeastAsWellAs at h
           simp_all only [List.get_eq_getElem, Fin.coe_cast, not_le, gt_iff_lt]
+          exact h
   apply not_le_of_gt at greater
   tauto
 
@@ -935,6 +936,10 @@ def PL : List Type := [PrisonersDilemmaStrategies, PrisonersDilemmaStrategies]
 
 theorem PL_length : List.length PL = 2 := rfl
 
+instance : NeZero PL.length := by
+  simp only [PL_length]
+  exact NeZero.of_pos (by norm_num)
+
 theorem PL_symmetric : GameSymmetric PL := by
   unfold GameSymmetric PL
   simp only [List.chain'_cons, List.chain'_singleton, and_self]
@@ -948,7 +953,7 @@ theorem PL_finite : GameFinite PL := by
 def PrisonersDilemmaUtilityFunction : UtilityFunction PL :=
   ⟨
     λ S =>
-      match (S.strategies (Fin.ofNat 0)).val, (S.strategies (Fin.ofNat 1)).val with
+      match (S.strategies (Fin.ofNat' PL.length 0)).val, (S.strategies ((Fin.ofNat' PL.length 1))).val with
       | PrisonersDilemmaStrategies.silent,  PrisonersDilemmaStrategies.silent  => { utilities := [3, 3], same_length := rfl }
       | PrisonersDilemmaStrategies.silent,  PrisonersDilemmaStrategies.confess => { utilities := [1, 4], same_length := rfl }
       | PrisonersDilemmaStrategies.confess, PrisonersDilemmaStrategies.silent  => { utilities := [4, 1], same_length := rfl }
@@ -1010,7 +1015,7 @@ theorem PDSilentConfessIsUnilateralOfPDSilentSilent : UnilateralChange PL Prison
     simp only [Fin.zero_eta, List.get_eq_getElem, Fin.val_zero]
   | ⟨1, _⟩ =>
     right
-    simp only [Fin.mk_one, Fin.isValue, List.elem_eq_mem, List.mem_singleton, decide_True]
+    simp only [Fin.mk_one, Fin.isValue, List.elem_eq_mem, List.mem_singleton, decide_true]
   | ⟨Nat.succ (Nat.succ n), l⟩ =>
     rw [PL_length] at l
     simp only [Nat.succ_eq_add_one] at l
@@ -1068,9 +1073,50 @@ theorem NashEquilibriumConfessConfess : NashEquilibrium PL PrisonersDilemmaGame 
   intro S' delta uc
   have i : Fin PL.length := ⟨0, by simp [PL_length]⟩
   specialize uc i
-  match i with
-  | ⟨0, _⟩ => sorry
-  | ⟨1, _⟩ => sorry
+  fin_cases i
+  all_goals fin_cases delta
+  all_goals (
+    unfold DoesAtLeastAsWellAs
+    unfold PL at S'
+    unfold PrisonersDilemmaConfessConfessProfile at uc
+    intro thisUtilities otherUtilities
+    unfold PL at thisUtilities
+    unfold PL at otherUtilities
+    simp_all only [Fin.zero_eta, Fin.isValue, List.get_eq_getElem, Fin.val_zero, List.contains_eq_mem, List.mem_cons,
+      List.not_mem_nil, or_false, decide_eq_true_eq, Fin.coe_cast, otherUtilities, thisUtilities]
+    unfold Game.play
+    unfold UtilityFunction.apply
+    unfold PrisonersDilemmaGame PrisonersDilemmaConfessConfessProfile
+    unfold PrisonersDilemmaUtilityFunction PrisonersDilemmaPureProfile
+    simp_all only [Fin.isValue, Fin.ofNat'_eq_cast, List.get_eq_getElem, Fin.val_natCast, Fin.zero_eta, Fin.val_zero,
+      Fin.mk_one, Fin.val_one]
+    obtain ⟨strategies⟩ := S'
+    simp_all only [Fin.isValue])
+  . cases uc with
+    | inl h =>
+      simp_all only [Fin.isValue]
+      sorry
+    | inr h_1 =>
+      simp_all only [Fin.isValue, Fin.val_zero]
+      sorry
+  . cases uc with
+    | inl h =>
+      simp_all only [Fin.isValue]
+      sorry
+    | inr h_1 =>
+      tauto
+  . cases uc with
+    | inl h =>
+      simp_all only [Fin.isValue]
+      sorry
+    | inr h_1 =>
+      tauto
+  . cases uc with
+    | inl h =>
+      simp_all only [Fin.isValue]
+      sorry
+    | inr h_1 =>
+      sorry
 
 -- Example: Rock-Paper-Scissors
 
@@ -1080,12 +1126,17 @@ inductive RockPaperScissorsStrategies where
 | scissors
 
 def RPS : List Type := [RockPaperScissorsStrategies, RockPaperScissorsStrategies]
+
 theorem RPS_length : List.length RPS = 2 := rfl
+
+instance : NeZero RPS.length := by
+  simp only [RPS_length]
+  exact NeZero.of_pos (by norm_num)
 
 def RockPaperScissorsUtilityFunction : UtilityFunction RPS :=
   ⟨
     λ S =>
-      match (S.strategies (Fin.ofNat 0)).val, (S.strategies (Fin.ofNat 1)).val with
+      match (S.strategies (Fin.ofNat' RPS.length 0)).val, (S.strategies (Fin.ofNat' RPS.length 1)).val with
       | RockPaperScissorsStrategies.rock,     RockPaperScissorsStrategies.rock     => { utilities := [1, 1], same_length := rfl }
       | RockPaperScissorsStrategies.rock,     RockPaperScissorsStrategies.paper    => { utilities := [0, 2], same_length := rfl }
       | RockPaperScissorsStrategies.rock,     RockPaperScissorsStrategies.scissors => { utilities := [2, 0], same_length := rfl }
@@ -1123,10 +1174,16 @@ structure NashDemandChoice where
 
 def NashDemandChoiceList : List Type := [NashDemandChoice, NashDemandChoice]
 
+theorem NDCLength : List.length NashDemandChoiceList = 2 := rfl
+
+instance : NeZero NashDemandChoiceList.length := by
+  simp only [NDCLength]
+  exact NeZero.of_pos (by norm_num)
+
 def NashDemandUtilityFunction : UtilityFunction NashDemandChoiceList :=
   ⟨
     λ S =>
-      match S.strategies (Fin.ofNat 0), S.strategies (Fin.ofNat 1) with
+      match S.strategies (Fin.ofNat' NashDemandChoiceList.length 0), S.strategies (Fin.ofNat' NashDemandChoiceList.length 1) with
       | ⟨d1, _, _⟩, ⟨d2, _, _⟩ =>
         let d12 : Rat := d1 + d2
         let oneUtility : Rat := 1
@@ -1161,12 +1218,18 @@ structure IPD_Strategy where
 
 def IPDList : List Type := [IPD_Strategy, IPD_Strategy]
 
+theorem IPDListLength : List.length IPDList = 2 := rfl
+
+instance : NeZero IPDList.length := by
+  simp only [IPDListLength]
+  exact NeZero.of_pos (by norm_num)
+
 def IPD_UtilityRecurse (psp: PureStrategyProfile IPDList) (p1_list: List PrisonersDilemmaStrategies) (p2_list: List PrisonersDilemmaStrategies) (iter: Nat) : UtilityProfile IPDList := by
   by_cases iter = 0
   case pos => exact zero_utility_profile IPDList
   case neg =>
-    let p1_choice : PrisonersDilemmaStrategies := (psp.strategies (Fin.ofNat 0)).val.strategy_function p1_list p2_list
-    let p2_choice : PrisonersDilemmaStrategies := (psp.strategies (Fin.ofNat 1)).val.strategy_function p2_list p1_list
+    let p1_choice : PrisonersDilemmaStrategies := (psp.strategies (Fin.ofNat' IPDList.length 0)).val.strategy_function p1_list p2_list
+    let p2_choice : PrisonersDilemmaStrategies := (psp.strategies (Fin.ofNat' IPDList.length 1)).val.strategy_function p2_list p1_list
     let current_round_utilities :=
       PrisonersDilemmaUtilityFunction.pure_apply
         ⟨λ i => match i with
